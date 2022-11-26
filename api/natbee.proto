@@ -1,0 +1,89 @@
+syntax = "proto3";
+
+package natbeeapi;
+
+service NatbeeApi {
+    rpc Attach(AttachRequest) returns(Empty);
+    rpc Detach(AttachRequest) returns(Empty);
+    rpc AddService(AddRequest) returns(Empty);
+    rpc DelService(DelRequest) returns(Empty);
+    rpc Save(SaveReq) returns(Empty);
+    rpc Poll(PollRequest) returns(PollResponse);
+    rpc Push(PushRequest) returns(Empty);
+}
+
+enum ServiceType {
+    DEFAULT = 0;
+    NAT     = 1;
+    FNAT    = 2;
+}
+
+enum Protocol {
+    INVALID = 0;
+    TCP     = 6;
+    UDP     = 17;
+}
+
+message Empty {}
+
+message SockAddr {
+    string   ip       = 1;
+    uint32   port     = 2;
+    Protocol protocol = 3;
+}
+
+message Session {
+    string   cip      = 1;
+    uint32   cport    = 2;
+    string   vip      = 3;
+    uint32   vport    = 4;
+    string   lip      = 5;
+    uint32   lport    = 6;
+    string   rip      = 7;
+    uint32   rport    = 8;
+    Protocol protocol = 9;
+}
+
+message ServiceAttr {
+    string          lip    = 1;
+    uint32          rport  = 2;
+    repeated string rs_ips = 5;
+}
+
+message AddRequest {
+    ServiceType type = 1;
+    SockAddr    key  = 2;
+    ServiceAttr val  = 3;
+}
+
+message DelRequest {
+    ServiceType type = 1;
+    SockAddr    key  = 2;
+}
+
+message AttachRequest {
+    ServiceType type = 1;
+    string      ip   = 2;
+}
+
+message SaveReq {
+    string file_path = 1;
+}
+
+message PollRequest {
+    ServiceType type = 1;
+}
+
+message PollResponse {
+    repeated Session nat_sessions    = 1;
+    repeated Session fnat_sessions   = 2;
+    string           transport_group = 12;
+    string           version         = 13;
+}
+
+message PushRequest {
+    repeated Session nat_sessions    = 1;
+    repeated Session fnat_sessions   = 2;
+    string           transport_group = 12;
+    string           version         = 13;
+}
