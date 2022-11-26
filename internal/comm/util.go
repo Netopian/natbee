@@ -2,9 +2,13 @@ package comm
 
 import (
 	"encoding/binary"
+	"errors"
 	"net"
+	"strings"
 	"sync"
 	"unsafe"
+
+	"github.com/shirou/gopsutil/v3/host"
 )
 
 var (
@@ -114,9 +118,9 @@ func StrToIp(ipStr string) net.IP {
 func StrArrToIpArr(ipStrs []string) ([]net.IP, error) {
 	ips := make([]net.IP, 0, len(ipStrs))
 	for _, v := range ipStrs {
-		ip := StrToIP(v)
+		ip := StrToIp(v)
 		if ip == nil {
-			return nil, errors.New(invalid ip string)
+			return nil, errors.New("invalid ip string")
 		}
 		ips = append(ips, ip)
 	}
@@ -140,12 +144,11 @@ func StrToMac(macStr string) net.HardwareAddr {
 }
 
 // return system up time(s)
-func GetUptime()(uint64, error) {
+func GetUptime() (uint64, error) {
 	return host.Uptime()
 }
 
-func SplitIP(ip string) (string ,string) 
-{
+func SplitIP(ip string) (string, string) {
 	ips := strings.Split(ip, "/")
 	if len(ips) > 1 {
 		return ips[0], ips[1]
@@ -154,7 +157,7 @@ func SplitIP(ip string) (string ,string)
 }
 
 func JoinIP(ip, parentIP string) string {
-	if (len(parentIP) == 0) {
+	if len(parentIP) == 0 {
 		return ip
 	}
 	return ip + "/" + parentIP

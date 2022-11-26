@@ -3,6 +3,7 @@ package comm
 import (
 	"encoding/binary"
 	"errors"
+	api "natbee/api"
 	"net"
 	"time"
 )
@@ -115,7 +116,7 @@ type SrvKey struct {
 	Proto    SockProto
 }
 
-func (k *SrvKey) Marshal([]byte, error) {
+func (k *SrvKey) Marshal() ([]byte, error) {
 	b := make([]byte, srvKeySz)
 	ip := StrToIp(k.IP)
 	if ip == nil {
@@ -244,11 +245,11 @@ func (v *ConnVal) Unmarshal(b []byte) error {
 	if ip.To4() == nil && ip.To16() == nil {
 		return errors.New("invalid txdip")
 	}
-	k.RxDIP = ip.String()
+	v.TxDIP = ip.String()
 	v.DevIdx = GetUint32(b[connIdxOffset:])
-	v.IsLocal = v[connLocalOffset] > 0
-	v.IsLocalPort = v[connLocalPortOffset] > 0
-	v.IsPositive = v[connPositiveOffset] > 0
+	v.IsLocal = b[connLocalOffset] > 0
+	v.IsLocalPort = b[connLocalPortOffset] > 0
+	v.IsPositive = b[connPositiveOffset] > 0
 	v.Ts = GetUint64(b[connTsOffset:])
 	return nil
 }
