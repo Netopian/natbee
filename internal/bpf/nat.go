@@ -97,8 +97,8 @@ func (s *nat) Release() {
 	close(s.close)
 	s.elf.Prog.Close()
 	s.elf.Services.Close()
-	s.Elf.Conns.Close()
-	s.InnerRs.Range(func(k, v interface{}) bool {
+	s.elf.Conns.Close()
+	s.innerRs.Range(func(k, v interface{}) bool {
 		v.(*ebpf.Map).Close()
 		return true
 	})
@@ -206,7 +206,7 @@ func (s *nat) PushSession(ses []*comm.Session) {
 		indexes := idxes.(devIdx)
 		ks, vs := v.ToConn(af, indexes.vdevId, indexes.ldevIdx, ts)
 		pushConn(s.elf.Conns, &s.foreignConn, ks, vs)
-		se := val
+		se := v
 		comm.PutSession(se)
 	}
 }

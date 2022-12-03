@@ -2,6 +2,7 @@ package netraw
 
 import (
 	"net"
+
 	log "github.com/sirupsen/logrus"
 
 	"github.com/google/gopacket"
@@ -29,9 +30,9 @@ func Arp(src, dst net.IP) {
 	}
 	defer handle.Close()
 
-	var ehtType layers.EthernetType
-	var addrSz int8
-	var srcIP, dsIP net.IP
+	var ethType layers.EthernetType
+	var addrSz uint8
+	var srcIP, dstIP net.IP
 	if srcIP, dstIP = src.To4(), dst.To4(); srcIP != nil && dstIP != nil {
 		ethType = layers.EthernetTypeIPv4
 		addrSz = v4Sz
@@ -44,21 +45,21 @@ func Arp(src, dst net.IP) {
 	}
 
 	eth := &layers.Ethernet{
-		SrcMAC: intf.HardwareAddr,
-		DstMAC: net.HardwareAddr{0xff, 0xff, 0xff,0xff,0xff,0xff},
+		SrcMAC:       intf.HardwareAddr,
+		DstMAC:       net.HardwareAddr{0xff, 0xff, 0xff, 0xff, 0xff, 0xff},
 		EthernetType: layers.EthernetTypeARP,
 	}
 
 	a := &layers.ARP{
-		AddrType: layers.LinkTypeEthernet,
-		Protocol: ethType,
-		HwAddressSize: macSz,
-		ProtAddressSize: addrSz,
-		Operation: uint16(1),
-		SourceHwAddress: intf.HardwareAddr,
+		AddrType:          layers.LinkTypeEthernet,
+		Protocol:          ethType,
+		HwAddressSize:     macSz,
+		ProtAddressSize:   addrSz,
+		Operation:         uint16(1),
+		SourceHwAddress:   intf.HardwareAddr,
 		SourceProtAddress: srcIP,
-		DstHwAddress: net.HardwareAddr{0xff, 0xff, 0xff,0xff,0xff,0xff},
-		DstProtAddress: dstIP,
+		DstHwAddress:      net.HardwareAddr{0xff, 0xff, 0xff, 0xff, 0xff, 0xff},
+		DstProtAddress:    dstIP,
 	}
 
 	buffer := gopacket.NewSerializeBuffer()
@@ -70,17 +71,17 @@ func Arp(src, dst net.IP) {
 	}
 }
 
-func getIface(ip net.IP), *net.Interface {
+func getIface(ip net.IP) *net.Interface {
 	ifs, err := net.Interfaces()
-	if err != nil  || len(ifs) <= 1{
+	if err != nil || len(ifs) <= 1 {
 		return nil
 	}
 
 	for _, v := range ifs {
 		addrs, err := v.Addrs()
-			if err != nil {
-				continue
-			}
+		if err != nil {
+			continue
+		}
 		intf := v
 		for _, addr := range addrs {
 			if addr.(*net.IPNet).IP.Equal(ip) {

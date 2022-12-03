@@ -1,8 +1,11 @@
 package bpf
 
 import (
-	"natbee/internal/netraw"
 	"natbee/internal/comm"
+	"natbee/internal/netraw"
+	"runtime"
+	"sync"
+
 	"github.com/cilium/ebpf"
 	"github.com/cilium/ebpf/perf"
 	"github.com/pkg/errors"
@@ -20,20 +23,24 @@ var (
 
 func init() {
 	connValPool = &sync.Pool{
-		New: func() interface{ return new(comm.ConnVal)},
+		New: func() interface{} { return new(comm.ConnVal) },
 	}
 }
 
 func getConnVal() *comm.ConnVal {
-	return  connValPool.Get().(*comm.ConnVal)
+	return connValPool.Get().(*comm.ConnVal)
 }
 
-func putConnVal(v *conn.ConnVal) {
+func putConnVal(v *comm.ConnVal) {
 	connValPool.Put(v)
 }
 
 func createInnerRsMap(spec *ebpf.MapSpec, val *comm.SrvVal) (*ebpf.Map, error) {
 	rsIps, err := comm.StrArrToIpArr(val.RsIps)
+	if err != nil {
+		return nil, errors.Wrap(err, "create inner real server map failed")
+	}
+	m, err := ebpf.NewMap(spec)
 	if err != nil {
 		return nil, errors.Wrap(err, "create inner real server map failed")
 	}
@@ -59,7 +66,7 @@ func createInnerRsMap(spec *ebpf.MapSpec, val *comm.SrvVal) (*ebpf.Map, error) {
 
 // if exclusive mode, will return ports to release
 func staleConn(m *ebpf.Map, mc *sync.Map, timeout uint64, exclusive bool) []uint32 {
-	conns := poolConn(m)
+	conns := pollConn(m)
 	filterStaledConn(mc, &conns, timeout)
 	ports := []uint32{}
 	var err error
@@ -69,7 +76,7 @@ func staleConn(m *ebpf.Map, mc *sync.Map, timeout uint64, exclusive bool) []uint
 			if v.IsPositive {
 				mc.Delete(k)
 			}
-			if key, err = k.Marshal; err != nil {
+			if key, err = k.Marshal(); err != nil {
 				log.Errorf("marshal %s key failed: %v", m.String(), err)
 				break
 			}
@@ -86,19 +93,19 @@ func staleConn(m *ebpf.Map, mc *sync.Map, timeout uint64, exclusive bool) []uint
 }
 
 func filterStaledConn(mc *sync.Map, conns *map[comm.ConnKey]*comm.ConnVal, timeout uint64) {
-	cur, err := comm.GetUptime
+	cur, err := comm.GetUptime()
 	if err != nil {
 		log.Errorf("get system boot time failed: %v", err)
 		*conns = make(map[comm.ConnKey]*comm.ConnVal)
 		return
 	}
 	for k, v := range *conns {
-		k1, k2 := k, comm.ConnKey{Af:k.Af, Proto:k.Proto, 
+		k1, k2 := k, comm.ConnKey{Af: k.Af, Proto: k.Proto,
 			RxSIP: v.TxDIP, RxSPort: v.TxDPort, RxDIP: v.TxSIP, RxDPort: v.TxSPort}
-		tx := v.Tx / comm.NsCnt
+		ts := v.Ts / comm.NsCnt
 		if !v.IsLocal && v.IsPositive {
 			if t, ok := mc.Load(k); ok {
-				ts = t.(uint64)/comm.NsCnt
+				ts = t.(uint64) / comm.NsCnt
 			}
 		}
 		if ts+timeout >= cur {
@@ -132,7 +139,7 @@ func pollConn(m *ebpf.Map) map[comm.ConnKey]*comm.ConnVal {
 	return conns
 }
 
-func pushConn(m* ebpf.Map, mc *sync.Map, ks []comm.ConnKey, vs []comm.ConnVal) {
+func pushConn(m *ebpf.Map, mc *sync.Map, ks []comm.ConnKey, vs []comm.ConnVal) {
 	key1, err := ks[0].Marshal()
 	if err != nil {
 		log.Errorf("marshal connection key failed: %v", err)

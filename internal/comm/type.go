@@ -105,7 +105,7 @@ type Service interface {
 	Attach(int) error
 	Detach(int) error
 	PollSession() []*Session
-	PutSession([]*Session)
+	PushSession([]*Session)
 	Release()
 }
 
