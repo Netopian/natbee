@@ -50,14 +50,14 @@ func createInnerRsMap(spec *ebpf.MapSpec, val *comm.SrvVal) (*ebpf.Map, error) {
 		comm.PutBeAddr(b, val.Proto, rsIps[i], 0)
 		comm.PutUint32(b[comm.MapAddrSz:], uint32(0))
 		if err = m.Put(uint32(i), b); err != nil {
-			err = errors.Wrap(err, "put %s failed", m.String())
+			err = errors.Wrapf(err, "put %s failed", m.String())
 			return nil, err
 		}
 	}
 	for ; i < cpuNum; i++ {
 		comm.PutUint32(b[comm.MapAddrSz:], uint32(0))
 		if err = m.Put(uint32(i), b); err != nil {
-			err = errors.Wrap(err, "put %s failed", m.String())
+			err = errors.Wrapf(err, "put %s failed", m.String())
 			return nil, err
 		}
 	}

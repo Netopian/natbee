@@ -5,21 +5,21 @@
 #include "nb_helpers.h"
 #include "nb_csum_helpers.h"
 
-static __always_inline struct fm_sockaddr* get_rs(struct fm_service *srv, struct fm_sockaddr *key, __u32 cpu)
+static __always_inline struct nb_sockaddr* select_real_server(struct nb_service *srv, struct nb_sockaddr *key, __u32 cpu)
 {
-    __u32 *inner_fd = bpf_map_lookup_elem(&map_nat_rs, key);
+    __u32 *inner_fd = bpf_map_lookup_elem(&nb_map_nat_real_server, key);
     if (!inner_fd) {
         return 0;
     }
 
-    struct fm_realserver *val = bpf_map_lookup_elem(inner_fd, &cpu);
+    struct nb_real_server *val = bpf_map_lookup_elem(inner_fd, &cpu);
     if (!val) {
         return 0;
     }
 
     __u32 inner_key = val->idx;
     val->idx++;
-    if (val->idx >= srv->rs_cnt) {
+    if (val->idx >= srv->real_server_cnt) {
         val->idx = 0;
     }
 
@@ -30,118 +30,118 @@ static __always_inline struct fm_sockaddr* get_rs(struct fm_service *srv, struct
     return &val->addr;
 }
 
-static __always_inline enum fm_action get_or_gen_conn(struct fm_context *ctx)
+static __always_inline enum nb_action get_or_gen_conn(struct nb_context *ctx)
 {
-    // in_conn
-    struct fm_conn in_conn;
-    __builtin_memset(&in_conn, 0, sizeof(in_conn));
-    in_conn.saddr.l4p = ctx->l4_proto;
-    in_conn.daddr.l4p = ctx->l4_proto;
+    // forward
+    struct nb_connection fwd_key;
+    __builtin_memset(&fwd_key, 0, sizeof(fwd_key));
+    fwd_key.saddr.l4_proto = ctx->l4_proto;
+    fwd_key.daddr.l4_proto = ctx->l4_proto;
     if (ctx->is_ipv6) {
-        in_conn.saddr.af = AF_INET6;
-        in_conn.daddr.af = AF_INET6;
-        __builtin_memcpy(&in_conn.saddr.addr6, &(((struct ipv6hdr*)ctx->l3h)->saddr), 16);
-        __builtin_memcpy(&in_conn.daddr.addr6, &(((struct ipv6hdr*)ctx->l3h)->daddr), 16);
+        fwd_key.saddr.af = AF_INET6;
+        fwd_key.daddr.af = AF_INET6;
+        __builtin_memcpy(&fwd_key.saddr.addr6, &(((struct ipv6hdr*)ctx->l3h)->saddr), 16);
+        __builtin_memcpy(&fwd_key.daddr.addr6, &(((struct ipv6hdr*)ctx->l3h)->daddr), 16);
     } else {
-        in_conn.saddr.af = AF_INET;
-        in_conn.daddr.af = AF_INET;
-        in_conn.saddr.addr4.addr = ((struct ipvhdr*)ctx->l3h)->saddr;
-        in_conn.daddr.addr4.addr = ((struct ipvhdr*)ctx->l3h)->daddr;
+        fwd_key.saddr.af = AF_INET;
+        fwd_key.daddr.af = AF_INET;
+        fwd_key.saddr.addr4.addr = ((struct ipvhdr*)ctx->l3h)->saddr;
+        fwd_key.daddr.addr4.addr = ((struct ipvhdr*)ctx->l3h)->daddr;
     }
-    in_conn.saddr.port = ((struct udphdr*)ctx->l4h)->source;
-    in_conn.daddr.port = ((struct udphdr*)ctx->l4h)->dest;
+    fwd_key.saddr.port = ((struct udphdr*)ctx->l4h)->source;
+    fwd_key.daddr.port = ((struct udphdr*)ctx->l4h)->dest;
 
-    struct fm_redirect *look_fwd = bpf_map_lookup_elem(&map_nat_conn, &in_conn);
-    if (look_fwd) {
-        ctx->fwd     = *look_fwd;
-        look_fwd->ts = bpf_ktime_get_ns();
-        return FM_OK;
-    }
-
-    struct fm_service *srv = bpf_map_lookup_elem(&map_nat_srv, &in_conn.daddr);
-    if (!srv || !srv->rs_cnt) {
-        return FM_PASS;
+    struct nb_redirect *fwd_val = bpf_map_lookup_elem(&nb_map_nat_connection, &fwd_key);
+    if (fwd_val) {
+        ctx->forward = *fwd_val;
+        fwd_val->ts  = bpf_ktime_get_ns();
+        return NB_ACT_OK;
     }
 
-    struct fm_sockaddr *rs = get_rs(srv, &in_conn.daddr, ctx->cpu);
+    struct nb_service *srv = bpf_map_lookup_elem(&nb_map_nat_service, &fwd_key.daddr);
+    if (!srv || !srv->real_server_cnt) {
+        return NB_ACT_PASS;
+    }
+
+    struct nb_sockaddr *rs = select_real_server(srv, &fwd_key.daddr, ctx->cpu);
     if (!rs) {
-        return FM_DROP;
+        return NB_ACT_DROP;
     }
 
-    // build postive conn redirect data
-    ctx->fwd.rconn.saddr      = in_conn.saddr;
-    ctx->fwd.rconn.daddr      = *rs;
-    ctx->fwd.rconn.daddr.port = srv->rport;
-    ctx->fwd.rdev_idx         = srv->ldev_idx;
-    ctx->fwd.ts               = bpf_ktime_get_ns();
-    ctx->fwd.positive         = FM_SET;
+    // build forward redirect data
+    ctx->forward.redirect.saddr      = fwd_key.saddr;
+    ctx->forward.redirect.daddr      = *rs;
+    ctx->forward.redirect.daddr.port = srv->real_port;
+    ctx->forward.redirect_if_idx     = srv->local_if_idx;
+    ctx->forward.ts                  = bpf_ktime_get_ns();
+    ctx->forward.positive            = NB_SET;
 
-    // build reverse conn
-    struct fm_conn rin_conn;
-    rin_conn.saddr = ctx->fwd.rconn.daddr;
-    rin_conn.daddr = ctx->fwd.rconn.saddr;
+    // reverse
+    struct nb_connection rvs_key;
+    rvs_key.saddr = ctx->forward.redirect.daddr;
+    rvs_key.daddr = ctx->forward.redirect.saddr;
 
     // build reverse conn redirect data
-    struct fm_redirect rev;
-    __builtin_memset(&rev, 0, sizeof(rev));
-    rev.rconn.saddr  = in_conn.daddr;
-    rev.rconn.daddr  = in_conn.saddr;
-    rev.rdev_idx     = srv->vdev_idx;
-    rev.ts           = ctx->fwd.ts;
+    struct nb_redirect reverse;
+    __builtin_memset(&reverse, 0, sizeof(reverse));
+    reverse.redirect.saddr  = fwd_key.daddr;
+    reverse.redirect.daddr  = fwd_key.saddr;
+    reverse.redirect_if_idx = srv->vitual_if_idx;
+    reverse.ts              = ctx->forward.ts;
 
-    long update_ret = bpf_map_update_elem(&map_nat_conn, &in_conn, &ctx->fwd, BPF_NOEXIST);
+    long update_ret = bpf_map_update_elem(&nb_map_nat_connection, &fwd_key, &ctx->forward, BPF_NOEXIST);
     if (update_ret) {
-        return FM_DROP;
+        return NB_ACT_DROP;
     }
-    update_ret = bpf_map_update_elem(&map_nat_conn, &rin_conn, &ctx->rev, BPF_NOEXIST);
+    update_ret = bpf_map_update_elem(&nb_map_nat_connection, &rvs_key, &reverse, BPF_NOEXIST);
     if (update_ret) {
-        bpf_map_delete_elem(&map_nat_conn, &in_conn)
-        return FM_DROP;
+        bpf_map_delete_elem(&nb_map_nat_connection, &fwd_key)
+        return NB_ACT_DROP;
     }
 
-    return FM_OK;
+    return NB_ACT_OK;
 }
 
 SEC("xdp_nat")
-int xdp_l4_nat(struct xdp_md *xdp_ctx)
+int nb_xdp_nat(struct xdp_md *xdp_ctx)
 {
-    struct fm_context ctx;
+    struct nb_context ctx;
     __builtin_memset(&ctx, 0, sizeof*ctx);
     ctx.end       = (void*)(long)xdp_ctx->data_end;
     ctx.begin     = (void*)(long)xdp_ctx->data;
     ctx.stack_ctx = (void*)xdp_ctx;
     ctx.cpu       = bpf_get_smp_processor_id();
 
-    enum fm_action rc = parse_ctx(&ctx);
-    if (rc != FM_OK) {
-        return xdp_act(rc);
+    enum nb_action act = nb_parse_ctx(&ctx);
+    if (act != NB_ACT_OK) {
+        return nb_xdp_act(act);
     }
 
-    rc = get_or_gen_conn(&ctx);
-    if (rc != FM_OK) {
-        return xdp_act(rc);
+    act = get_or_gen_conn(&ctx);
+    if (act != NB_ACT_OK) {
+        return nb_xdp_act(act);
     }
 
-    rc = swap_addr(&ctx);
-    if (rc != FM_OK) {
-        if (rc == FM_UNREACH) {
-            struct fm_neigh_info ev;
-            ev.local = ctx.fwd.rconn.saddr;
-            ev.neigh = ctx.fwd.rconn.daddr;
-            bpf_perf_event_output(ctx.stack_ctx, &map_nat_event, BPF_F_CURRENT_CPU, &ev, sizeof(ev));
+    act = nb_swap_addr(&ctx);
+    if (act != NB_ACT_OK) {
+        if (act == NB_ACT_UNREACH) {
+            struct nb_neigh_event ev;
+            ev.local = ctx.forward.redirect.saddr;
+            ev.neigh = ctx.forward.redirect.daddr;
+            bpf_perf_event_output(ctx.stack_ctx, &nb_map_nat_event, BPF_F_CURRENT_CPU, &ev, sizeof(ev));
         }
-        return xdp_act(rc);
+        return nb_xdp_act(act);
     }
 
-    rc = dec_ttl(&ctx);
-    if (rc != FM_OK) {
-        return xdp_act(rc);
+    act = nb_dec_ttl(&ctx);
+    if (act != NB_ACT_OK) {
+        return nb_xdp_act(act);
     }
 
-    update_ip_csum(&ctx);
-    update_l4_csum_lite(&ctx);
+    nb_update_ip_csum(&ctx);
+    nb_update_l4_csum_incre(&ctx);
 
-    return bpf_redirect(ctx.fwd.rdev.idx, 0);
+    return bpf_redirect(ctx.forward.redirect_if_idx, 0);
 }
 
 char __license[] SEC("license") = "GPL";

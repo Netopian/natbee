@@ -1,8 +1,8 @@
 package intf
 
 import (
-	"natbee/internal/comm"
 	"fmt"
+	"natbee/internal/comm"
 	"net"
 	"sync"
 
@@ -49,7 +49,7 @@ func updateIfs() error {
 		return errors.New("interface none")
 	}
 
-	for _. v := range ifs {
+	for _, v := range ifs {
 		addrs, err := v.Addrs()
 		if err != nil {
 			log.Errorf("get interface[%s], address, failed: %v", v.Name, err)
@@ -58,10 +58,10 @@ func updateIfs() error {
 		intf := v
 		for _, addr := range addrs {
 			if ip := addr.(*net.IPNet).IP.To4(); ip != nil {
-				ipInfs.Store(ip.String(), &intf)
+				ipIfs.Store(ip.String(), &intf)
 			}
 			if ip := addr.(*net.IPNet).IP.To16(); ip != nil {
-				ipInfs.Store(ip.String(), &intf)
+				ipIfs.Store(ip.String(), &intf)
 			}
 		}
 	}

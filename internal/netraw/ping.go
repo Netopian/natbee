@@ -15,7 +15,7 @@ func Ping(dst net.IP) {
 	}
 	pinger.SetPrivileged(true)
 	pinger.Count = 1
-	if err = pinger.run(); err != nil {
+	if err = pinger.Run(); err != nil {
 		log.Errorf("ping %s failed: %v", dst.String(), err)
 	}
 }

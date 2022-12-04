@@ -4,15 +4,15 @@
 #include "nb_structs.h"
 
 // map #0
-struct bpf_map_def SEC("maps") map_inner_rs = {
+struct bpf_map_def SEC("maps") nb_map_in_real_server = {
     .type        = BPF_MAP_TYPE_ARRAY,
     .key_size    = sizeof(__u32),
-    .value_size  = sizeof(struct fm_realserver),
+    .value_size  = sizeof(struct nb_real_server),
     .max_entries = 1 << 10,
 };
 
 // map #1
-struct bpf_map_def SEC("maps") map_inner_port = {
+struct bpf_map_def SEC("maps") nb_map_in_port = {
     .type        = BPF_MAP_TYPE_ARRAY,
     .key_size    = sizeof(__u32),
     .value_size  = sizeof(__u32),
@@ -20,17 +20,17 @@ struct bpf_map_def SEC("maps") map_inner_port = {
 };
 
 // map #2
-struct bpf_map_def SEC("maps") map_nat_srv = {
+struct bpf_map_def SEC("maps") nb_map_nat_service = {
     .type        = BPF_MAP_TYPE_HASH,
-    .key_size    = sizeof(struct fm_sockaddr),
-    .value_size  = sizeof(struct fm_service),
+    .key_size    = sizeof(struct nb_sockaddr),
+    .value_size  = sizeof(struct nb_service),
     .max_entries = 1 << 8,
 };
 
 // map #3
-struct bpf_map_def SEC("maps") map_nat_rs = {
+struct bpf_map_def SEC("maps") nb_map_nat_real_server = {
     .type          = BPF_MAP_TYPE_HASH_OF_MAPS,
-    .key_size      = sizeof(struct fm_sockaddr),
+    .key_size      = sizeof(struct nb_sockaddr),
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 0)
     .value_size    = sizeof(__u32),
 #else
@@ -40,25 +40,25 @@ struct bpf_map_def SEC("maps") map_nat_rs = {
 };
 
 // map #4
-struct bpf_map_def SEC("maps") map_nat_conn = {
+struct bpf_map_def SEC("maps") nb_map_nat_connection = {
     .type        = BPF_MAP_TYPE_HASH,
-    .key_size    = sizeof(struct fm_conn),
-    .value_size  = sizeof(struct fm_redirect),
+    .key_size    = sizeof(struct nb_connection),
+    .value_size  = sizeof(struct nb_redirect),
     .max_entries = 1 << 17,
 };
 
 // map #5
-struct bpf_map_def SEC("maps") map_fnat_srv = {
+struct bpf_map_def SEC("maps") nb_map_fnat_service = {
     .type        = BPF_MAP_TYPE_HASH,
-    .key_size    = sizeof(struct fm_sockaddr),
-    .value_size  = sizeof(struct fm_service),
+    .key_size    = sizeof(struct nb_sockaddr),
+    .value_size  = sizeof(struct nb_service),
     .max_entries = 1 << 8,
 };
 
 // map #6
-struct bpf_map_def SEC("maps") map_fnat_rs = {
+struct bpf_map_def SEC("maps") nb_map_fnat_real_server = {
     .type          = BPF_MAP_TYPE_HASH_OF_MAPS,
-    .key_size      = sizeof(struct fm_sockaddr),
+    .key_size      = sizeof(struct nb_sockaddr),
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 0)
     .value_size    = sizeof(__u32),
 #else
@@ -68,7 +68,7 @@ struct bpf_map_def SEC("maps") map_fnat_rs = {
 };
 
 // map #7
-struct bpf_map_def SEC("maps") map_fnat_port = {
+struct bpf_map_def SEC("maps") nb_map_fnat_port = {
     .type          = BPF_MAP_TYPE_HASH_OF_MAPS,
     .key_size      = sizeof(__u32),
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 0)
@@ -80,15 +80,15 @@ struct bpf_map_def SEC("maps") map_fnat_port = {
 };
 
 // map #8
-struct bpf_map_def SEC("maps") map_fnat_conn = {
+struct bpf_map_def SEC("maps") nb_map_fnat_connection = {
     .type        = BPF_MAP_TYPE_HASH,
-    .key_size    = sizeof(struct fm_conn),
-    .value_size  = sizeof(struct fm_redirect),
+    .key_size    = sizeof(struct nb_connection),
+    .value_size  = sizeof(struct nb_redirect),
     .max_entries = 1 << 17,
 };
 
 // map #9
-struct bpf_map_def SEC("maps") map_fnat_release_port = {
+struct bpf_map_def SEC("maps") nb_map_fnat_release_port = {
     .type        = BPF_MAP_TYPE_HASH,
     .key_size    = sizeof(__u32),
     .value_size  = sizeof(__u32),
@@ -96,7 +96,7 @@ struct bpf_map_def SEC("maps") map_fnat_release_port = {
 };
 
 // map #10
-struct bpf_map_def SEC("maps") map_nat_event = {
+struct bpf_map_def SEC("maps") nb_map_nat_event = {
     .type        = BPF_MAP_TYPE_PERF_EVENT_ARRAY,
     .key_size    = sizeof(int),
     .value_size  = sizeof(__u32),
@@ -104,7 +104,7 @@ struct bpf_map_def SEC("maps") map_nat_event = {
 };
 
 // map #11
-struct bpf_map_def SEC("maps") map_fnat_event = {
+struct bpf_map_def SEC("maps") nb_map_fnat_event = {
     .type        = BPF_MAP_TYPE_PERF_EVENT_ARRAY,
     .key_size    = sizeof(int),
     .value_size  = sizeof(__u32),

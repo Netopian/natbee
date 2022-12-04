@@ -16,9 +16,9 @@ import (
 )
 
 const (
-	mapFNatRsName    string = "map_fnat_rs"
-	mapInnerPortName string = "map_inner_port"
-	mapFNatPortName  string = "map_fnat_port"
+	mapFNatRsName    string = "nb_map_fnat_real_server"
+	mapInnerPortName string = "nb_map_in_port"
+	mapFNatPortName  string = "nb_map_fnat_port"
 	startPort        uint32 = 5001
 	portsCnt         int    = 60000
 	szIdx            uint32 = 65535
@@ -27,16 +27,16 @@ const (
 )
 
 type fnatElf struct {
-	XdpProg     *ebpf.Program `ebpf:"xdp_l4_fnat"`
-	TcProg      *ebpf.Program `ebpf:"tc_l4_fnat"`
-	Services    *ebpf.Map     `ebpf:"map_fnat_srv"`
-	InnerRs     *ebpf.Map     `ebpf:"map_inner_rs"`
-	Rs          *ebpf.Map     `ebpf:"map_fnat_rs"`
-	Conns       *ebpf.Map     `ebpf:"map_fnat_conn"`
-	InnerPort   *ebpf.Map     `ebpf:"map_inner_port"`
-	Port        *ebpf.Map     `ebpf:"map_fnat_port"`
-	ReleasePort *ebpf.Map     `ebpf:"map_fnat_release_port"`
-	Event       *ebpf.Map     `ebpf:"map_fnat_event"`
+	XdpProg     *ebpf.Program `ebpf:"nb_xdp_fnat"`
+	TcProg      *ebpf.Program `ebpf:"nb_tc_fnat"`
+	Services    *ebpf.Map     `ebpf:"nb_map_fnat_service"`
+	InnerRs     *ebpf.Map     `ebpf:"nb_map_in_real_server"`
+	Rs          *ebpf.Map     `ebpf:"nb_map_fnat_real_server"`
+	Conns       *ebpf.Map     `ebpf:"nb_map_fnat_connection"`
+	InnerPort   *ebpf.Map     `ebpf:"nb_map_in_port"`
+	Port        *ebpf.Map     `ebpf:"nb_map_fnat_port"`
+	ReleasePort *ebpf.Map     `ebpf:"nb_map_fnat_release_port"`
+	Event       *ebpf.Map     `ebpf:"nb_map_fnat_event"`
 }
 
 type fnat struct {
@@ -55,11 +55,6 @@ type fnat struct {
 	exclusive     bool
 	timeout       uint32
 	useTc         bool
-}
-
-type devIdx struct {
-	vdevIdx uint32
-	ldevIdx uint32
 }
 
 func NewFNAT(file string, timeout uint32, exclusive bool, useTc bool) (comm.Service, error) {
@@ -144,11 +139,11 @@ func (s *fnat) Release() {
 func (s *fnat) Add(key *comm.SrvKey, val *comm.SrvVal) error {
 	k, err := key.Marshal()
 	if err != nil {
-		return errors.Warp(err, "marshal fnat key failed")
+		return errors.Wrap(err, "marshal fnat key failed")
 	}
 	v, err := val.Marshal()
 	if err != nil {
-		return errors.Warp(err, "marshal fnat value failed")
+		return errors.Wrap(err, "marshal fnat value failed")
 	}
 
 	inRsMap, err := createInnerRsMap(s.innerRsSpec, val)
@@ -162,12 +157,12 @@ func (s *fnat) Add(key *comm.SrvKey, val *comm.SrvVal) error {
 	}()
 
 	if err = s.elf.Rs.Update(k, uint32(inRsMap.FD()), ebpf.UpdateNoExist); err != nil {
-		return errors.Warp(err, "put fnat inner map failed")
+		return errors.Wrap(err, "put fnat inner map failed")
 	}
 
 	if err = s.elf.Services.Update(k, v, ebpf.UpdateNoExist); err != nil {
 		s.elf.Rs.Delete(k)
-		return errors.Warp(err, "put fnat service failed")
+		return errors.Wrap(err, "put fnat service failed")
 	}
 	s.innerRs.Store(*key, inRsMap)
 	liteKey := *key
@@ -179,7 +174,7 @@ func (s *fnat) Add(key *comm.SrvKey, val *comm.SrvVal) error {
 func (s *fnat) Del(key *comm.SrvKey) error {
 	k, err := key.Marshal()
 	if err != nil {
-		return errors.Warp(err, "marshal fnat key failed")
+		return errors.Wrap(err, "marshal fnat key failed")
 	}
 	if err = s.elf.Services.Delete(k); err != nil && !errors.Is(err, ebpf.ErrKeyNotExist) {
 		return errors.Wrap(err, "delete fnat service failed")
@@ -246,7 +241,7 @@ func (s *fnat) PushSession(ses []*comm.Session) {
 			continue
 		}
 		indexes := idxes.(devIdx)
-		ks, vs := v.ToConn(af, indexes.vdevId, indexes.ldevIdx, ts)
+		ks, vs := v.ToConn(af, indexes.vdevIdx, indexes.ldevIdx, ts)
 		pushConn(s.elf.Conns, &s.foreignConn, ks, vs)
 		se := v
 		comm.PutSession(se)
@@ -259,7 +254,7 @@ func (s *fnat) recycle() {
 		case <-s.close:
 			return
 		case <-s.ticker.C:
-			ports := staleConn(s.elf.Conn, &s.foreignConn, uint64(s.timeout), s.exclusive)
+			ports := staleConn(s.elf.Conns, &s.foreignConn, uint64(s.timeout), s.exclusive)
 			s.releasePorts(ports)
 		}
 	}

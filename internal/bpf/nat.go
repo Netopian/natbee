@@ -15,17 +15,17 @@ import (
 )
 
 const (
-	mapNatRsName   string = "map_nat_rs"
-	mapInnerRsName string = "map_inner_rs"
+	mapNatRsName   string = "nb_map_nat_real_server"
+	mapInnerRsName string = "nb_map_in_real_server"
 )
 
 type natElf struct {
-	Prog     *ebpf.Program `ebpf:"xdp_l4_nat"`
-	Services *ebpf.Map     `ebpf:"map_nat_srv"`
-	InnerRs  *ebpf.Map     `ebpf:"map_inner_rs"`
-	Rs       *ebpf.Map     `ebpf:"map_nat_rs"`
-	Conns    *ebpf.Map     `ebpf:"map_nat_conn"`
-	Event    *ebpf.Map     `ebpf:"map_nat_event"`
+	Prog     *ebpf.Program `ebpf:"nb_xdp_nat"`
+	Services *ebpf.Map     `ebpf:"nb_map_nat_service"`
+	InnerRs  *ebpf.Map     `ebpf:"nb_map_in_real_server"`
+	Rs       *ebpf.Map     `ebpf:"nb_map_nat_real_server"`
+	Conns    *ebpf.Map     `ebpf:"nb_map_nat_connection"`
+	Event    *ebpf.Map     `ebpf:"nb_map_nat_event"`
 }
 
 type nat struct {
@@ -110,11 +110,11 @@ func (s *nat) Release() {
 func (s *nat) Add(key *comm.SrvKey, val *comm.SrvVal) error {
 	k, err := key.Marshal()
 	if err != nil {
-		return errors.Warp(err, "marshal nat key failed")
+		return errors.Wrap(err, "marshal nat key failed")
 	}
 	v, err := val.Marshal()
 	if err != nil {
-		return errors.Warp(err, "marshal nat value failed")
+		return errors.Wrap(err, "marshal nat value failed")
 	}
 
 	inRsMap, err := createInnerRsMap(s.innerRsSpec, val)
@@ -128,12 +128,12 @@ func (s *nat) Add(key *comm.SrvKey, val *comm.SrvVal) error {
 	}()
 
 	if err = s.elf.Rs.Update(k, uint32(inRsMap.FD()), ebpf.UpdateNoExist); err != nil {
-		return errors.Warp(err, "put nat inner map failed")
+		return errors.Wrap(err, "put nat inner map failed")
 	}
 
 	if err = s.elf.Services.Update(k, v, ebpf.UpdateNoExist); err != nil {
 		s.elf.Rs.Delete(k)
-		return errors.Warp(err, "put nat service failed")
+		return errors.Wrap(err, "put nat service failed")
 	}
 	s.innerRs.Store(*key, inRsMap)
 	liteKey := *key
@@ -145,7 +145,7 @@ func (s *nat) Add(key *comm.SrvKey, val *comm.SrvVal) error {
 func (s *nat) Del(key *comm.SrvKey) error {
 	k, err := key.Marshal()
 	if err != nil {
-		return errors.Warp(err, "marshal nat key failed")
+		return errors.Wrap(err, "marshal nat key failed")
 	}
 	if err = s.elf.Services.Delete(k); err != nil && !errors.Is(err, ebpf.ErrKeyNotExist) {
 		return errors.Wrap(err, "delete nat service failed")
@@ -204,7 +204,7 @@ func (s *nat) PushSession(ses []*comm.Session) {
 			continue
 		}
 		indexes := idxes.(devIdx)
-		ks, vs := v.ToConn(af, indexes.vdevId, indexes.ldevIdx, ts)
+		ks, vs := v.ToConn(af, indexes.vdevIdx, indexes.ldevIdx, ts)
 		pushConn(s.elf.Conns, &s.foreignConn, ks, vs)
 		se := v
 		comm.PutSession(se)
@@ -217,7 +217,7 @@ func (s *nat) recycle() {
 		case <-s.close:
 			return
 		case <-s.ticker.C:
-			staleConn(s.elf.Conn, &s.foreignConn, uint64(s.timeout), false)
+			staleConn(s.elf.Conns, &s.foreignConn, uint64(s.timeout), false)
 		}
 	}
 }

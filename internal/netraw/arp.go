@@ -63,7 +63,7 @@ func Arp(src, dst net.IP) {
 	}
 
 	buffer := gopacket.NewSerializeBuffer()
-	gopacket.SerializeLayers(buffer, gopacket.SerializeOption(), eth, a)
+	gopacket.SerializeLayers(buffer, gopacket.SerializeOptions{}, eth, a)
 	arpMsg := buffer.Bytes()
 
 	if err = handle.WritePacketData(arpMsg); err != nil {

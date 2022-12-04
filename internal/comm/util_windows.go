@@ -9,7 +9,7 @@ func AttachLink(_, _ int) error {
 	return errors.New("attach link is not supported on this os")
 }
 
-func DetackLink(_ int) error {
+func DetachLink(_ int) error {
 	return errors.New("detach link is not supported on this os")
 }
 

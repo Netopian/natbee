@@ -3,7 +3,11 @@
 
 package comm
 
-import "errors"
+import (
+	"github.com/pkg/errors"
+
+	"github.com/vishvananda/netlink"
+)
 
 func AttachLink(idx, fd int) error {
 	/* kernel version need >= 5.7
@@ -20,7 +24,7 @@ func AttachLink(idx, fd int) error {
 	return netlink.LinkSetXdpFdWithFlags(link, fd, nl.XDP_FLAGS_SKB_MODE)
 }
 
-func DetackLink(idx int) error {
+func DetachLink(idx int) error {
 	link, err := netlink.LinkByIndex(idx)
 	if err != nil {
 		return errors.Wrap(err, "get link by index failed")
