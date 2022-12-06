@@ -3,16 +3,17 @@ package server
 import (
 	"context"
 	"fmt"
-	"natbee/internal/comm"
-	"natbee/internal/intf"
-	"natbee/pkg/balancer"
-	"natbee/pkg/config"
 	"net"
+
+	"github.com/Netopian/natbee/internal/comm"
+	"github.com/Netopian/natbee/internal/intf"
+	"github.com/Netopian/natbee/pkg/balancer"
+	"github.com/Netopian/natbee/pkg/config"
 
 	log "github.com/sirupsen/logrus"
 	"google.golang.org/grpc"
 
-	api "natbee/api"
+	api "github.com/Netopian/natbee/api"
 
 	"github.com/pkg/errors"
 )
@@ -32,7 +33,7 @@ func NewAPIServer(g *grpc.Server, b *balancer.Balancer, c *config.ConfigSet, por
 		c:          c,
 		port:       port,
 	}
-	api.RegisterNatbeeApiServer(g, s)
+	api.RegisterNatBeeApiServer(g, s)
 	return s
 }
 
@@ -107,10 +108,10 @@ func (s *server) AddService(c context.Context, r *api.AddRequest) (*api.Empty, e
 	)
 
 	for {
-		if k, err = genSrvKey(r.Key); err != nil {
+		if k, err = convertToSrvKey(r.Key); err != nil {
 			break
 		}
-		if v, err = genSrvVal(k.IP, k.ParentIP, k.Proto, r.Val); err != nil {
+		if v, err = convertToSrvVal(k.IP, k.ParentIP, k.Proto, r.Val); err != nil {
 			break
 		}
 		switch r.Type {
@@ -138,7 +139,7 @@ func (s *server) DelService(c context.Context, r *api.DelRequest) (*api.Empty, e
 	)
 
 	for {
-		if k, err = genSrvKey(r.Key); err != nil {
+		if k, err = convertToSrvKey(r.Key); err != nil {
 			break
 		}
 		switch r.Type {
@@ -176,15 +177,15 @@ func (s *server) Poll(c context.Context, r *api.PollRequest) (*api.PollResponse,
 	case api.ServiceType_DEFAULT:
 		// only keep local session
 		natSes, _ = s.b.PollNatSesssion()
-		resp.NatSessions = genAPISession(natSes, true)
+		resp.NatSessions = convertToAPISession(natSes, true)
 		fnatSes, _ = s.b.PollFNatSesssion()
-		resp.FnatSessions = genAPISession(fnatSes, true)
+		resp.FnatSessions = convertToAPISession(fnatSes, true)
 	case api.ServiceType_NAT:
 		natSes, _ = s.b.PollNatSesssion()
-		resp.NatSessions = genAPISession(natSes, false)
+		resp.NatSessions = convertToAPISession(natSes, false)
 	case api.ServiceType_FNAT:
 		fnatSes, _ = s.b.PollFNatSesssion()
-		resp.FnatSessions = genAPISession(fnatSes, false)
+		resp.FnatSessions = convertToAPISession(fnatSes, false)
 	default:
 		return nil, errors.New("invalid service type")
 	}
@@ -195,14 +196,14 @@ func (s *server) Push(c context.Context, r *api.PushRequest) (*api.Empty, error)
 	if r.TransportGroup != s.c.Global.Group {
 		return nil, errors.New("group mismatch")
 	}
-	natSes := genSession(r.NatSessions)
-	fnatSes := genSession(r.FnatSessions)
+	natSes := convertToSession(r.NatSessions)
+	fnatSes := convertToSession(r.FnatSessions)
 	s.b.PushNatSession(natSes)
 	s.b.PushFNatSession(fnatSes)
 	return &api.Empty{}, nil
 }
 
-func genSrvKey(key *api.SockAddr) (*comm.SrvKey, error) {
+func convertToSrvKey(key *api.ServiceKey) (*comm.SrvKey, error) {
 	k := &comm.SrvKey{
 		Port:  uint16(key.Port),
 		Proto: comm.SockProto(key.Protocol),
@@ -214,41 +215,41 @@ func genSrvKey(key *api.SockAddr) (*comm.SrvKey, error) {
 	return k, nil
 }
 
-func genSrvVal(vip, pvip string, proto comm.SockProto, val *api.ServiceAttr) (*comm.SrvVal, error) {
-	if len(val.RsIps) == 0 {
+func convertToSrvVal(vip, pvip string, proto comm.SockProto, val *api.ServiceAttr) (*comm.SrvVal, error) {
+	if len(val.RealServerIps) == 0 {
 		return nil, errors.New("real server is empty")
 	}
 	v := &comm.SrvVal{
-		Proto: proto,
-		Mode:  comm.ModeNat,
-		RPort: uint16(val.Rport),
-		RsIps: val.RsIps,
+		Proto:         proto,
+		Mode:          comm.ModeNat,
+		RealPort:      uint16(val.RealPort),
+		RealServerIPs: val.RealServerIps,
 	}
-	v.LIP, v.ParentLIP = comm.SplitIP(val.Lip)
+	v.LocalIP, v.ParentLocalIP = comm.SplitIP(val.LocalIp)
 
 	var err error
 	if len(pvip) == 0 {
-		if v.VDevIdx, err = intf.GetIfIdxByIp(vip); err != nil {
+		if v.VirtualIfIdx, err = intf.GetIfIdxByIp(vip); err != nil {
 			return nil, errors.Wrapf(err, "get virtual ip(%s) interface index failed", vip)
 		}
 	} else {
-		if v.VDevIdx, err = intf.GetIfIdxByIp(pvip); err != nil {
+		if v.VirtualIfIdx, err = intf.GetIfIdxByIp(pvip); err != nil {
 			return nil, errors.Wrapf(err, "get parent virtual ip(%s) interface index failed", pvip)
 		}
 	}
-	if len(v.ParentLIP) == 0 {
-		if v.LDevIdx, err = intf.GetIfIdxByIp(v.LIP); err != nil {
-			return nil, errors.Wrapf(err, "get local ip(%s) interface index failed", v.LIP)
+	if len(v.ParentLocalIP) == 0 {
+		if v.LocalIfIdx, err = intf.GetIfIdxByIp(v.LocalIP); err != nil {
+			return nil, errors.Wrapf(err, "get local ip(%s) interface index failed", v.LocalIP)
 		}
 	} else {
-		if v.LDevIdx, err = intf.GetIfIdxByIp(v.ParentLIP); err != nil {
-			return nil, errors.Wrapf(err, "get parent local ip(%s) interface index failed", v.ParentLIP)
+		if v.LocalIfIdx, err = intf.GetIfIdxByIp(v.ParentLocalIP); err != nil {
+			return nil, errors.Wrapf(err, "get parent local ip(%s) interface index failed", v.ParentLocalIP)
 		}
 	}
 	return v, nil
 }
 
-func genAPISession(ses []*comm.Session, local bool) []*api.Session {
+func convertToAPISession(ses []*comm.Session, local bool) []*api.Session {
 	se := make([]*api.Session, 0, len(ses))
 	if local {
 		for _, v := range ses {
@@ -264,7 +265,7 @@ func genAPISession(ses []*comm.Session, local bool) []*api.Session {
 	return se
 }
 
-func genSession(apiSes []*api.Session) []*comm.Session {
+func convertToSession(apiSes []*api.Session) []*comm.Session {
 	ses := make([]*comm.Session, 0, len(apiSes))
 	for _, v := range apiSes {
 		se := comm.GetSession()

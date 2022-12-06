@@ -3,7 +3,8 @@ package cmd
 import (
 	"errors"
 	"fmt"
-	api "natbee/api"
+
+	api "github.com/Netopian/natbee/api"
 
 	"github.com/spf13/cobra"
 )
@@ -42,7 +43,8 @@ func fnatShow() error {
 		fmt.Printf(`P[%s]: C[%s:%d]\tV[%s:%d]
 \tL[%s:%d]\tR[%s:%d]
 ------------------------------------------------------------
-`, s.Protocol.String(), s.Cip, s.Cport, s.Vip, s.Vport, s.Lip, s.Lport, s.Rip, s.Rport)
+`, s.Protocol.String(), s.ClientIp, s.ClientPort, s.VirtualIp, s.VirtualPort,
+			s.LocalIp, s.LocalPort, s.RealIp, s.RealPort)
 	}
 	return nil
 }
@@ -122,14 +124,14 @@ func fnatAdd() error {
 	}
 	req := &api.AddRequest{
 		Type: api.ServiceType_FNAT,
-		Key: &api.SockAddr{
+		Key: &api.ServiceKey{
 			Ip:   fnatOpts.add.VIP,
 			Port: uint32(fnatOpts.add.VPort),
 		},
 		Val: &api.ServiceAttr{
-			Lip:   fnatOpts.add.LIP,
-			Rport: uint32(fnatOpts.add.RPort),
-			RsIps: fnatOpts.add.Rs,
+			LocalIp:       fnatOpts.add.LIP,
+			RealPort:      uint32(fnatOpts.add.RPort),
+			RealServerIps: fnatOpts.add.Rs,
 		},
 	}
 	if fnatOpts.add.Proto == "tcp" {
@@ -147,7 +149,7 @@ func fnatDel() error {
 	}
 	req := &api.DelRequest{
 		Type: api.ServiceType_FNAT,
-		Key: &api.SockAddr{
+		Key: &api.ServiceKey{
 			Ip:   fnatOpts.add.VIP,
 			Port: uint32(fnatOpts.add.VPort),
 		},

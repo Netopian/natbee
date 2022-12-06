@@ -3,7 +3,8 @@ package cmd
 import (
 	"errors"
 	"fmt"
-	api "natbee/api"
+
+	api "github.com/Netopian/natbee/api"
 
 	"github.com/spf13/cobra"
 )
@@ -42,7 +43,7 @@ func natShow() error {
 		fmt.Printf(`P[%s]: C[%s:%d]\tV[%s:%d]
 \tR[%s:%d]
 ------------------------------------------------------------
-`, s.Protocol.String(), s.Cip, s.Cport, s.Vip, s.Vport, s.Rip, s.Rport)
+`, s.Protocol.String(), s.ClientIp, s.ClientPort, s.VirtualIp, s.VirtualPort, s.RealIp, s.RealPort)
 	}
 	return nil
 }
@@ -122,14 +123,14 @@ func natAdd() error {
 	}
 	req := &api.AddRequest{
 		Type: api.ServiceType_NAT,
-		Key: &api.SockAddr{
+		Key: &api.ServiceKey{
 			Ip:   natOpts.add.VIP,
 			Port: uint32(natOpts.add.VPort),
 		},
 		Val: &api.ServiceAttr{
-			Lip:   natOpts.add.LIP,
-			Rport: uint32(natOpts.add.RPort),
-			RsIps: natOpts.add.Rs,
+			LocalIp:       natOpts.add.LIP,
+			RealPort:      uint32(natOpts.add.RPort),
+			RealServerIps: natOpts.add.Rs,
 		},
 	}
 	if natOpts.add.Proto == "tcp" {
@@ -147,7 +148,7 @@ func natDel() error {
 	}
 	req := &api.DelRequest{
 		Type: api.ServiceType_NAT,
-		Key: &api.SockAddr{
+		Key: &api.ServiceKey{
 			Ip:   natOpts.add.VIP,
 			Port: uint32(natOpts.add.VPort),
 		},

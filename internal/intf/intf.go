@@ -2,9 +2,10 @@ package intf
 
 import (
 	"fmt"
-	"natbee/internal/comm"
 	"net"
 	"sync"
+
+	"github.com/Netopian/natbee/internal/comm"
 
 	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
@@ -19,7 +20,7 @@ func RefreshInterfaces() error {
 }
 
 func GetIfIdxByIp(ipStr string) (int, error) {
-	ip := comm.StrToIp(ipStr)
+	ip := comm.ConvertToIP(ipStr)
 	if ip == nil {
 		return 0, errors.New("invalid ip")
 	}
@@ -30,7 +31,7 @@ func GetIfIdxByIp(ipStr string) (int, error) {
 }
 
 func GetIfNameByIp(ipStr string) (string, error) {
-	ip := comm.StrToIp(ipStr)
+	ip := comm.ConvertToIP(ipStr)
 	if ip == nil {
 		return "", errors.New("invalid ip")
 	}

@@ -2,11 +2,12 @@ package bpf
 
 import (
 	"fmt"
-	"natbee/internal/comm"
 	"os"
 	"runtime"
 	"sync"
 	"time"
+
+	"github.com/Netopian/natbee/internal/comm"
 
 	"github.com/cilium/ebpf"
 	"github.com/cilium/ebpf/perf"
@@ -15,50 +16,39 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-const (
-	mapFNatRsName    string = "nb_map_fnat_real_server"
-	mapInnerPortName string = "nb_map_in_port"
-	mapFNatPortName  string = "nb_map_fnat_port"
-	startPort        uint32 = 5001
-	portsCnt         int    = 60000
-	szIdx            uint32 = 65535
-	getIdx           uint32 = 65533
-	putIdx           uint32 = 65534
-)
-
 type fnatElf struct {
-	XdpProg     *ebpf.Program `ebpf:"nb_xdp_fnat"`
-	TcProg      *ebpf.Program `ebpf:"nb_tc_fnat"`
-	Services    *ebpf.Map     `ebpf:"nb_map_fnat_service"`
-	InnerRs     *ebpf.Map     `ebpf:"nb_map_in_real_server"`
-	Rs          *ebpf.Map     `ebpf:"nb_map_fnat_real_server"`
-	Conns       *ebpf.Map     `ebpf:"nb_map_fnat_connection"`
-	InnerPort   *ebpf.Map     `ebpf:"nb_map_in_port"`
-	Port        *ebpf.Map     `ebpf:"nb_map_fnat_port"`
-	ReleasePort *ebpf.Map     `ebpf:"nb_map_fnat_release_port"`
-	Event       *ebpf.Map     `ebpf:"nb_map_fnat_event"`
+	XdpProg       *ebpf.Program `ebpf:"nb_xdp_fnat"`
+	TcProg        *ebpf.Program `ebpf:"nb_tc_fnat"`
+	Service       *ebpf.Map     `ebpf:"nb_map_fnat_service"`
+	InRealService *ebpf.Map     `ebpf:"nb_map_in_real_server"`
+	RealServer    *ebpf.Map     `ebpf:"nb_map_fnat_real_server"`
+	Connection    *ebpf.Map     `ebpf:"nb_map_fnat_connection"`
+	InPort        *ebpf.Map     `ebpf:"nb_map_in_port"`
+	Port          *ebpf.Map     `ebpf:"nb_map_fnat_port"`
+	ReleasePort   *ebpf.Map     `ebpf:"nb_map_fnat_release_port"`
+	Event         *ebpf.Map     `ebpf:"nb_map_fnat_event"`
 }
 
 type fnat struct {
-	elf           fnatElf
-	spec          *ebpf.CollectionSpec
-	innerRsSpec   *ebpf.MapSpec
-	innerRs       sync.Map
-	innerPortSpec *ebpf.MapSpec
-	innerPort     sync.Map
-	foreignConn   sync.Map
-	devIdx        sync.Map
-	portPoolSz    uint32
-	ticker        *time.Ticker
-	rd            *perf.Reader
-	close         chan struct{}
-	exclusive     bool
-	timeout       uint32
-	useTc         bool
+	elf              fnatElf
+	spec             *ebpf.CollectionSpec
+	inRealServerSpec *ebpf.MapSpec
+	inRealServer     sync.Map
+	inPortSpec       *ebpf.MapSpec
+	inPort           sync.Map
+	foreignConn      sync.Map
+	ifIdx            sync.Map
+	portPoolSz       uint32
+	ticker           *time.Ticker
+	rd               *perf.Reader
+	close            chan struct{}
+	exclusive        bool
+	timeout          uint32
+	useTC            bool
 }
 
 func NewFNAT(file string, timeout uint32, exclusive bool, useTc bool) (comm.Service, error) {
-	s := &fnat{timeout: timeout, exclusive: exclusive, useTc: useTc}
+	s := &fnat{timeout: timeout, exclusive: exclusive, useTC: useTc}
 	err := rlimit.RemoveMemlock()
 	if err != nil {
 		log.Errorf("remove mem lock failed: %v", err)
@@ -70,26 +60,28 @@ func NewFNAT(file string, timeout uint32, exclusive bool, useTc bool) (comm.Serv
 		log.Errorf("load spec failed: %v", err)
 		return nil, err
 	}
-	_, ok := specs.Maps[mapFNatRsName]
+	_, ok := specs.Maps[fnatRealServerMapName]
 	if !ok {
-		log.Errorf("load spec failed: map object[%s] missing", mapFNatRsName)
-		return nil, fmt.Errorf("%s object missing", mapFNatRsName)
+		log.Errorf("load spec failed: map object[%s] missing", fnatRealServerMapName)
+		return nil, fmt.Errorf("%s object missing", fnatRealServerMapName)
 	}
-	if s.innerRsSpec, ok = specs.Maps[mapInnerRsName]; !ok {
-		log.Errorf("load spec failed: map object[%s] missing", mapInnerRsName)
-		return nil, fmt.Errorf("%s object missing", mapInnerRsName)
+	if s.inRealServerSpec, ok = specs.Maps[inRealServerMapName]; !ok {
+		log.Errorf("load spec failed: map object[%s] missing", inRealServerMapName)
+		return nil, fmt.Errorf("%s object missing", inRealServerMapName)
 	}
-	if _, ok := specs.Maps[mapFNatPortName]; !ok {
-		log.Errorf("load spec failed: map object[%s] missing", mapFNatPortName)
-		return nil, fmt.Errorf("%s object missing", mapFNatPortName)
+	if _, ok := specs.Maps[fnatPortMapName]; !ok {
+		log.Errorf("load spec failed: map object[%s] missing", fnatPortMapName)
+		return nil, fmt.Errorf("%s object missing", fnatPortMapName)
 	}
-	if s.innerPortSpec, ok = specs.Maps[mapInnerPortName]; !ok {
-		log.Errorf("load spec failed: map object[%s] missing", mapInnerPortName)
-		return nil, fmt.Errorf("%s object missing", mapInnerPortName)
+	if s.inPortSpec, ok = specs.Maps[inPortMapName]; !ok {
+		log.Errorf("load spec failed: map object[%s] missing", inPortMapName)
+		return nil, fmt.Errorf("%s object missing", inPortMapName)
 	}
 
-	specs.Maps[mapFNatRsName].InnerMap, specs.Maps[mapFNatRsName].Extra = specs.Maps[mapInnerRsName], nil
-	specs.Maps[mapFNatPortName].InnerMap, specs.Maps[mapFNatPortName].Extra = specs.Maps[mapInnerPortName], nil
+	specs.Maps[fnatRealServerMapName].InnerMap = specs.Maps[inRealServerMapName]
+	specs.Maps[fnatRealServerMapName].Extra = nil
+	specs.Maps[fnatPortMapName].InnerMap = specs.Maps[inPortMapName]
+	specs.Maps[fnatPortMapName].Extra = nil
 
 	if err = specs.LoadAndAssign(&s.elf, nil); err != nil {
 		log.Errorf("load bpf objects failed: %v", err)
@@ -101,9 +93,9 @@ func NewFNAT(file string, timeout uint32, exclusive bool, useTc bool) (comm.Serv
 		return nil, err
 	}
 
-	log.Infof("services: %+v", s.elf.Services)
-	log.Infof("real servers: %+v", s.elf.Rs)
-	log.Infof("connections: %+v", s.elf.Conns)
+	log.Infof("services: %+v", s.elf.Service)
+	log.Infof("real servers: %+v", s.elf.RealServer)
+	log.Infof("connections: %+v", s.elf.Connection)
 	if err = s.initPortMap(); err != nil {
 		s.deinitPortMap()
 		log.Errorf("init port map failed: %v", err)
@@ -122,17 +114,17 @@ func (s *fnat) Release() {
 	close(s.close)
 	s.elf.XdpProg.Close()
 	s.elf.TcProg.Close()
-	s.elf.Services.Close()
-	s.elf.Conns.Close()
-	s.innerRs.Range(func(k, v interface{}) bool {
+	s.elf.Service.Close()
+	s.elf.Connection.Close()
+	s.inRealServer.Range(func(k, v interface{}) bool {
 		v.(*ebpf.Map).Close()
 		return true
 	})
-	s.elf.Rs.Close()
-	s.elf.InnerRs.Close()
+	s.elf.RealServer.Close()
+	s.elf.InRealService.Close()
 	s.deinitPortMap()
 	s.elf.Port.Close()
-	s.elf.InnerPort.Close()
+	s.elf.InPort.Close()
 	s.elf.Event.Close()
 }
 
@@ -146,7 +138,7 @@ func (s *fnat) Add(key *comm.SrvKey, val *comm.SrvVal) error {
 		return errors.Wrap(err, "marshal fnat value failed")
 	}
 
-	inRsMap, err := createInnerRsMap(s.innerRsSpec, val)
+	inRsMap, err := createRealServerMap(s.inRealServerSpec, val)
 	if err != nil {
 		return err
 	}
@@ -156,18 +148,18 @@ func (s *fnat) Add(key *comm.SrvKey, val *comm.SrvVal) error {
 		}
 	}()
 
-	if err = s.elf.Rs.Update(k, uint32(inRsMap.FD()), ebpf.UpdateNoExist); err != nil {
+	if err = s.elf.RealServer.Update(k, uint32(inRsMap.FD()), ebpf.UpdateNoExist); err != nil {
 		return errors.Wrap(err, "put fnat inner map failed")
 	}
 
-	if err = s.elf.Services.Update(k, v, ebpf.UpdateNoExist); err != nil {
-		s.elf.Rs.Delete(k)
+	if err = s.elf.Service.Update(k, v, ebpf.UpdateNoExist); err != nil {
+		s.elf.RealServer.Delete(k)
 		return errors.Wrap(err, "put fnat service failed")
 	}
-	s.innerRs.Store(*key, inRsMap)
+	s.inRealServer.Store(*key, inRsMap)
 	liteKey := *key
 	liteKey.ParentIP = ""
-	s.devIdx.Store(liteKey, devIdx{uint32(val.VDevIdx), uint32(val.LDevIdx)})
+	s.ifIdx.Store(liteKey, ifIdxInfo{uint32(val.VirtualIfIdx), uint32(val.LocalIfIdx)})
 	return nil
 }
 
@@ -176,30 +168,30 @@ func (s *fnat) Del(key *comm.SrvKey) error {
 	if err != nil {
 		return errors.Wrap(err, "marshal fnat key failed")
 	}
-	if err = s.elf.Services.Delete(k); err != nil && !errors.Is(err, ebpf.ErrKeyNotExist) {
+	if err = s.elf.Service.Delete(k); err != nil && !errors.Is(err, ebpf.ErrKeyNotExist) {
 		return errors.Wrap(err, "delete fnat service failed")
 	}
-	if err = s.elf.Rs.Delete(k); err != nil {
+	if err = s.elf.RealServer.Delete(k); err != nil {
 		log.Errorf("del fnat[%v] inner map failed: %+v", key, err)
 	}
-	if m, ok := s.innerRs.LoadAndDelete(*key); ok {
+	if m, ok := s.inRealServer.LoadAndDelete(*key); ok {
 		m.(*ebpf.Map).Close()
 	}
 	liteKey := *key
 	liteKey.ParentIP = ""
-	s.devIdx.Delete(liteKey)
+	s.ifIdx.Delete(liteKey)
 	return nil
 }
 
 func (s *fnat) Attach(idx int) error {
-	if s.useTc {
+	if s.useTC {
 		return comm.AddFilter(idx, s.elf.TcProg.FD())
 	}
 	return comm.AttachLink(idx, s.elf.XdpProg.FD())
 }
 
 func (s *fnat) Detach(idx int) error {
-	if s.useTc {
+	if s.useTC {
 		return comm.DelFilter(idx)
 	}
 	return comm.DetachLink(idx)
@@ -207,7 +199,7 @@ func (s *fnat) Detach(idx int) error {
 
 // only keep positive connection
 func (s *fnat) PollSession() []*comm.Session {
-	conns := pollConn(s.elf.Conns)
+	conns := pollConn(s.elf.Connection)
 	ses := make([]*comm.Session, 0, len(conns)/2)
 	for k, v := range conns {
 		delVal := v
@@ -235,14 +227,14 @@ func (s *fnat) PushSession(ses []*comm.Session) {
 			continue
 		}
 
-		idxes, ok := s.devIdx.Load(comm.SrvKey{IP: v.VIP, Port: v.VPort, Proto: v.Proto})
+		idxes, ok := s.ifIdx.Load(comm.SrvKey{IP: v.VIP, Port: v.VPort, Proto: v.Proto})
 		if !ok {
 			log.Errorf("get %s:%d interface indexes failed", v.VIP, v.VPort)
 			continue
 		}
-		indexes := idxes.(devIdx)
-		ks, vs := v.ToConn(af, indexes.vdevIdx, indexes.ldevIdx, ts)
-		pushConn(s.elf.Conns, &s.foreignConn, ks, vs)
+		indexes := idxes.(ifIdxInfo)
+		ks, vs := v.ToConn(af, indexes.virtualIfIdx, indexes.localIfIdx, ts)
+		pushConn(s.elf.Connection, &s.foreignConn, ks, vs)
 		se := v
 		comm.PutSession(se)
 	}
@@ -254,7 +246,7 @@ func (s *fnat) recycle() {
 		case <-s.close:
 			return
 		case <-s.ticker.C:
-			ports := staleConn(s.elf.Conns, &s.foreignConn, uint64(s.timeout), s.exclusive)
+			ports := staleConn(s.elf.Connection, &s.foreignConn, uint64(s.timeout), s.exclusive)
 			s.releasePorts(ports)
 		}
 	}
@@ -266,10 +258,10 @@ func (s *fnat) initPortMap() error {
 		return nil
 	}
 	cpuNum := runtime.NumCPU()
-	s.portPoolSz = uint32(portsCnt / cpuNum)
+	s.portPoolSz = uint32(portMaxCnt / cpuNum)
 	port := uint32(startPort)
 	for i := 0; i < cpuNum; i++ {
-		m, err := ebpf.NewMap(s.innerPortSpec)
+		m, err := ebpf.NewMap(s.inPortSpec)
 		if err != nil {
 			return errors.Wrap(err, "create port map failed")
 		}
@@ -284,7 +276,7 @@ func (s *fnat) initPortMap() error {
 			m.Close()
 			return errors.Wrap(err, "put fnat inner map failed")
 		}
-		s.innerPort.Store(i, m)
+		s.inPort.Store(i, m)
 	}
 	log.Infof("cpu num is %d", cpuNum)
 	return nil
@@ -294,7 +286,7 @@ func (s *fnat) deinitPortMap() {
 	if !s.exclusive {
 		return
 	}
-	s.innerPort.Range(func(k, v interface{}) bool {
+	s.inPort.Range(func(k, v interface{}) bool {
 		v.(*ebpf.Map).Close()
 		return true
 	})
@@ -314,7 +306,7 @@ func (s *fnat) releasePorts(ports []uint32) {
 
 func (s *fnat) releasePort(port uint32) {
 	cpu := uint32(port-startPort) / s.portPoolSz
-	m, ok := s.innerPort.Load(int(cpu))
+	m, ok := s.inPort.Load(int(cpu))
 	if !ok {
 		return
 	}

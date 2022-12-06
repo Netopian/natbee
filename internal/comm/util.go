@@ -104,7 +104,7 @@ func GetBeAddr(b []byte) (net.IP, uint16, SockProto) {
 	return ip, port, SockProto(b[1])
 }
 
-func StrToIp(ipStr string) net.IP {
+func ConvertToIP(ipStr string) net.IP {
 	var ip net.IP
 	if ip = net.ParseIP(ipStr).To4(); ip != nil {
 		return ip
@@ -115,10 +115,10 @@ func StrToIp(ipStr string) net.IP {
 	return nil
 }
 
-func StrArrToIpArr(ipStrs []string) ([]net.IP, error) {
+func ConvertToIPs(ipStrs []string) ([]net.IP, error) {
 	ips := make([]net.IP, 0, len(ipStrs))
 	for _, v := range ipStrs {
-		ip := StrToIp(v)
+		ip := ConvertToIP(v)
 		if ip == nil {
 			return nil, errors.New("invalid ip string")
 		}
@@ -127,7 +127,7 @@ func StrArrToIpArr(ipStrs []string) ([]net.IP, error) {
 	return ips, nil
 }
 
-func IpArrToStrArr(ips []net.IP) []string {
+func ConvertToIPStrs(ips []net.IP) []string {
 	ipStrs := make([]string, 0, len(ips))
 	for _, v := range ips {
 		ipStrs = append(ipStrs, v.String())

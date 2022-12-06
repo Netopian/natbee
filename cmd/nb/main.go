@@ -1,7 +1,7 @@
 package main
 
 import (
-	"natbee/internal/cmd"
+	"github.com/Netopian/natbee/internal/cmd"
 
 	"google.golang.org/grpc"
 )

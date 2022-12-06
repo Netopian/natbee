@@ -3,9 +3,10 @@ package comm
 import (
 	"encoding/binary"
 	"errors"
-	api "natbee/api"
 	"net"
 	"time"
+
+	api "github.com/Netopian/natbee/api"
 )
 
 type BpfMode = uint32
@@ -118,7 +119,7 @@ type SrvKey struct {
 
 func (k *SrvKey) Marshal() ([]byte, error) {
 	b := make([]byte, srvKeySz)
-	ip := StrToIp(k.IP)
+	ip := ConvertToIP(k.IP)
 	if ip == nil {
 		return nil, errors.New("invalid ip")
 	}
@@ -127,30 +128,30 @@ func (k *SrvKey) Marshal() ([]byte, error) {
 }
 
 type SrvVal struct {
-	LIP       string
-	ParentLIP string
-	Proto     SockProto
-	Mode      BpfMode
-	Strategy  byte
-	RPort     uint16
-	RsIps     []string
-	VDevIdx   int
-	LDevIdx   int
-	Timeout   uint32
+	LocalIP       string
+	ParentLocalIP string
+	Proto         SockProto
+	Mode          BpfMode
+	Strategy      byte
+	RealPort      uint16
+	RealServerIPs []string
+	VirtualIfIdx  int
+	LocalIfIdx    int
+	Timeout       uint32
 }
 
 func (v *SrvVal) Marshal() ([]byte, error) {
 	b := make([]byte, srvValSz)
-	ip := StrToIp(v.LIP)
+	ip := ConvertToIP(v.LocalIP)
 	if ip == nil {
 		return nil, errors.New("invalid ip")
 	}
 	PutBeAddr(b, v.Proto, ip, 0)
 	b[MapAddrSz] = v.Strategy
-	binary.BigEndian.PutUint16(b[srvRsPortOffset:], v.RPort)
-	PutUint16(b[srvRsIpCntOffset:], uint16(len(v.RsIps)))
-	PutUint32(b[srvVirtualIdxOffset:], uint32(v.VDevIdx))
-	PutUint32(b[srvLocalIdxOffset:], uint32(v.LDevIdx))
+	binary.BigEndian.PutUint16(b[srvRsPortOffset:], v.RealPort)
+	PutUint16(b[srvRsIpCntOffset:], uint16(len(v.RealServerIPs)))
+	PutUint32(b[srvVirtualIdxOffset:], uint32(v.VirtualIfIdx))
+	PutUint32(b[srvLocalIdxOffset:], uint32(v.LocalIfIdx))
 	return b, nil
 }
 
@@ -165,12 +166,12 @@ type ConnKey struct {
 
 func (k *ConnKey) Marshal() ([]byte, error) {
 	b := make([]byte, MapConnKeySz)
-	ip := StrToIp(k.RxSIP)
+	ip := ConvertToIP(k.RxSIP)
 	if ip == nil {
 		return nil, errors.New("invalid rxsip")
 	}
 	PutBeAddr(b[:MapAddrSz], k.Proto, ip, k.RxSPort)
-	if ip = StrToIp(k.RxDIP); ip == nil {
+	if ip = ConvertToIP(k.RxDIP); ip == nil {
 		return nil, errors.New("invalid rxdip")
 	}
 	PutBeAddr(b[MapAddrSz:], k.Proto, ip, k.RxDPort)
@@ -197,11 +198,11 @@ func (k *ConnKey) Unmarshal(b []byte) error {
 }
 
 type ConnVal struct {
-	TxSIP       string
-	TxSPort     uint16
-	TxDIP       string
-	TxDPort     uint16
-	DevIdx      uint32
+	TxSrcIP     string
+	TxSrcPort   uint16
+	TxDstIP     string
+	TxDstPort   uint16
+	IfIdx       uint32
 	Proto       SockProto
 	Ts          uint64
 	IsLocal     bool
@@ -211,16 +212,16 @@ type ConnVal struct {
 
 func (v *ConnVal) Marshal() ([]byte, error) {
 	b := make([]byte, MapConnValSz)
-	ip := StrToIp(v.TxSIP)
+	ip := ConvertToIP(v.TxSrcIP)
 	if ip == nil {
 		return nil, errors.New("invalid txsip")
 	}
-	PutBeAddr(b[:MapAddrSz], v.Proto, ip, v.TxSPort)
-	if ip = StrToIp(v.TxDIP); ip == nil {
+	PutBeAddr(b[:MapAddrSz], v.Proto, ip, v.TxSrcPort)
+	if ip = ConvertToIP(v.TxDstIP); ip == nil {
 		return nil, errors.New("invalid txdip")
 	}
-	PutBeAddr(b[MapAddrSz:], v.Proto, ip, v.TxDPort)
-	PutUint32(b[connIdxOffset:], v.DevIdx)
+	PutBeAddr(b[MapAddrSz:], v.Proto, ip, v.TxDstPort)
+	PutUint32(b[connIdxOffset:], v.IfIdx)
 	if v.IsLocal {
 		b[connLocalOffset] = 1
 	}
@@ -236,17 +237,17 @@ func (v *ConnVal) Marshal() ([]byte, error) {
 
 func (v *ConnVal) Unmarshal(b []byte) error {
 	var ip net.IP
-	ip, v.TxSPort, v.Proto = GetBeAddr(b[:MapAddrSz])
+	ip, v.TxSrcPort, v.Proto = GetBeAddr(b[:MapAddrSz])
 	if ip.To4() == nil && ip.To16() == nil {
 		return errors.New("invalid txsip")
 	}
-	v.TxSIP = ip.String()
-	ip, v.TxDPort, _ = GetBeAddr(b[MapAddrSz:])
+	v.TxSrcIP = ip.String()
+	ip, v.TxDstPort, _ = GetBeAddr(b[MapAddrSz:])
 	if ip.To4() == nil && ip.To16() == nil {
 		return errors.New("invalid txdip")
 	}
-	v.TxDIP = ip.String()
-	v.DevIdx = GetUint32(b[connIdxOffset:])
+	v.TxDstIP = ip.String()
+	v.IfIdx = GetUint32(b[connIdxOffset:])
 	v.IsLocal = b[connLocalOffset] > 0
 	v.IsLocalPort = b[connLocalPortOffset] > 0
 	v.IsPositive = b[connPositiveOffset] > 0
@@ -272,47 +273,47 @@ func (s *Session) FromConn(k *ConnKey, v *ConnVal) {
 	s.CPort = k.RxSPort
 	s.VIP = k.RxDIP
 	s.VPort = k.RxDPort
-	s.LIP = v.TxSIP
-	s.LPort = v.TxSPort
-	s.RIP = v.TxDIP
-	s.RPort = v.TxDPort
+	s.LIP = v.TxSrcIP
+	s.LPort = v.TxSrcPort
+	s.RIP = v.TxDstIP
+	s.RPort = v.TxDstPort
 	s.Proto = k.Proto
 	s.IsLocal = v.IsLocal
 }
 
 func (s *Session) FromAPI(se *api.Session) {
-	s.CIP = se.Cip
-	s.CPort = uint16(se.Cport)
-	s.VIP = se.Vip
-	s.VPort = uint16(se.Vport)
-	s.LIP = se.Lip
-	s.LPort = uint16(se.Lport)
-	s.RIP = se.Rip
-	s.RPort = uint16(se.Rport)
+	s.CIP = se.ClientIp
+	s.CPort = uint16(se.ClientPort)
+	s.VIP = se.VirtualIp
+	s.VPort = uint16(se.VirtualPort)
+	s.LIP = se.LocalIp
+	s.LPort = uint16(se.LocalPort)
+	s.RIP = se.RealIp
+	s.RPort = uint16(se.RealPort)
 	s.Proto = SockProto(se.Protocol)
 	s.IsLocal = false
 }
 
-func (s *Session) ToConn(af AfType, vDevIdx, lDevIdx uint32, ts uint64) ([]ConnKey, []ConnVal) {
+func (s *Session) ToConn(af AfType, virtualIfIdx, localIfIdx uint32, ts uint64) ([]ConnKey, []ConnVal) {
 	ks := make([]ConnKey, 2)
 	vs := make([]ConnVal, 2)
 	ks[0] = ConnKey{af, s.Proto, s.CIP, s.CPort, s.VIP, s.VPort}
-	vs[0] = ConnVal{s.LIP, s.LPort, s.RIP, s.RPort, lDevIdx, s.Proto, ts, false, false, true}
+	vs[0] = ConnVal{s.LIP, s.LPort, s.RIP, s.RPort, localIfIdx, s.Proto, ts, false, false, true}
 	ks[1] = ConnKey{af, s.Proto, s.RIP, s.RPort, s.LIP, s.LPort}
-	vs[1] = ConnVal{s.VIP, s.VPort, s.CIP, s.CPort, vDevIdx, s.Proto, ts, false, false, false}
+	vs[1] = ConnVal{s.VIP, s.VPort, s.CIP, s.CPort, virtualIfIdx, s.Proto, ts, false, false, false}
 	return ks, vs
 }
 
 func (s *Session) ToAPI() *api.Session {
 	return &api.Session{
-		Cip:      s.CIP,
-		Cport:    uint32(s.CPort),
-		Vip:      s.VIP,
-		Vport:    uint32(s.VPort),
-		Lip:      s.LIP,
-		Lport:    uint32(s.LPort),
-		Rip:      s.RIP,
-		Rport:    uint32(s.RPort),
-		Protocol: api.Protocol(s.Proto),
+		ClientIp:    s.CIP,
+		ClientPort:  uint32(s.CPort),
+		VirtualIp:   s.VIP,
+		VirtualPort: uint32(s.VPort),
+		LocalIp:     s.LIP,
+		LocalPort:   uint32(s.LPort),
+		RealIp:      s.RIP,
+		RealPort:    uint32(s.RPort),
+		Protocol:    api.Protocol(s.Proto),
 	}
 }

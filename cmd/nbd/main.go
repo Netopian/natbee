@@ -1,12 +1,13 @@
 package main
 
 import (
-	"natbee/pkg/balancer"
-	"natbee/pkg/config"
-	"natbee/pkg/server"
 	"os"
 	"os/signal"
 	"syscall"
+
+	"github.com/Netopian/natbee/pkg/balancer"
+	"github.com/Netopian/natbee/pkg/config"
+	"github.com/Netopian/natbee/pkg/server"
 
 	flags "github.com/jessevdk/go-flags"
 	log "github.com/sirupsen/logrus"

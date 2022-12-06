@@ -1,4 +1,4 @@
-module natbee
+module github.com/Netopian/natbee
 
 go 1.17
 

@@ -2,10 +2,11 @@ package bpf
 
 import (
 	"fmt"
-	"natbee/internal/comm"
 	"os"
 	"sync"
 	"time"
+
+	"github.com/Netopian/natbee/internal/comm"
 
 	"github.com/cilium/ebpf"
 	"github.com/cilium/ebpf/perf"
@@ -14,36 +15,26 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-const (
-	mapNatRsName   string = "nb_map_nat_real_server"
-	mapInnerRsName string = "nb_map_in_real_server"
-)
-
 type natElf struct {
-	Prog     *ebpf.Program `ebpf:"nb_xdp_nat"`
-	Services *ebpf.Map     `ebpf:"nb_map_nat_service"`
-	InnerRs  *ebpf.Map     `ebpf:"nb_map_in_real_server"`
-	Rs       *ebpf.Map     `ebpf:"nb_map_nat_real_server"`
-	Conns    *ebpf.Map     `ebpf:"nb_map_nat_connection"`
-	Event    *ebpf.Map     `ebpf:"nb_map_nat_event"`
+	Prog         *ebpf.Program `ebpf:"nb_xdp_nat"`
+	Service      *ebpf.Map     `ebpf:"nb_map_nat_service"`
+	InRealServer *ebpf.Map     `ebpf:"nb_map_in_real_server"`
+	RealServer   *ebpf.Map     `ebpf:"nb_map_nat_real_server"`
+	Connection   *ebpf.Map     `ebpf:"nb_map_nat_connection"`
+	Event        *ebpf.Map     `ebpf:"nb_map_nat_event"`
 }
 
 type nat struct {
-	elf         natElf
-	spec        *ebpf.CollectionSpec
-	innerRsSpec *ebpf.MapSpec
-	innerRs     sync.Map
-	foreignConn sync.Map
-	devIdx      sync.Map
-	ticker      *time.Ticker
-	rd          *perf.Reader
-	close       chan struct{}
-	timeout     uint32
-}
-
-type devIdx struct {
-	vdevIdx uint32
-	ldevIdx uint32
+	elf              natElf
+	spec             *ebpf.CollectionSpec
+	inRealServerSpec *ebpf.MapSpec
+	inRealServer     sync.Map
+	foreignConn      sync.Map
+	ifIdx            sync.Map
+	ticker           *time.Ticker
+	rd               *perf.Reader
+	close            chan struct{}
+	timeout          uint32
 }
 
 func NewNAT(file string, timeout uint32) (comm.Service, error) {
@@ -59,17 +50,18 @@ func NewNAT(file string, timeout uint32) (comm.Service, error) {
 		log.Errorf("load spec failed: %v", err)
 		return nil, err
 	}
-	_, ok := specs.Maps[mapNatRsName]
+	_, ok := specs.Maps[natRealServerMapName]
 	if !ok {
-		log.Errorf("load spec failed: map object[%s] missing", mapNatRsName)
-		return nil, fmt.Errorf("%s object missing", mapNatRsName)
+		log.Errorf("load spec failed: map object[%s] missing", natRealServerMapName)
+		return nil, fmt.Errorf("%s object missing", natRealServerMapName)
 	}
-	if s.innerRsSpec, ok = specs.Maps[mapInnerRsName]; !ok {
-		log.Errorf("load spec failed: map object[%s] missing", mapInnerRsName)
-		return nil, fmt.Errorf("%s object missing", mapInnerRsName)
+	if s.inRealServerSpec, ok = specs.Maps[inRealServerMapName]; !ok {
+		log.Errorf("load spec failed: map object[%s] missing", inRealServerMapName)
+		return nil, fmt.Errorf("%s object missing", inRealServerMapName)
 	}
 
-	specs.Maps[mapNatRsName].InnerMap, specs.Maps[mapNatRsName].Extra = specs.Maps[mapInnerRsName], nil
+	specs.Maps[natRealServerMapName].InnerMap = specs.Maps[inRealServerMapName]
+	specs.Maps[natRealServerMapName].Extra = nil
 
 	if err = specs.LoadAndAssign(&s.elf, nil); err != nil {
 		log.Errorf("load bpf objects failed: %v", err)
@@ -81,9 +73,9 @@ func NewNAT(file string, timeout uint32) (comm.Service, error) {
 		return nil, err
 	}
 
-	log.Infof("services: %+v", s.elf.Services)
-	log.Infof("real servers: %+v", s.elf.Rs)
-	log.Infof("connections: %+v", s.elf.Conns)
+	log.Infof("services: %+v", s.elf.Service)
+	log.Infof("real servers: %+v", s.elf.RealServer)
+	log.Infof("connections: %+v", s.elf.Connection)
 
 	s.close = make(chan struct{})
 	s.ticker = time.NewTicker(comm.TickerTime)
@@ -96,14 +88,14 @@ func (s *nat) Release() {
 	s.rd.Close()
 	close(s.close)
 	s.elf.Prog.Close()
-	s.elf.Services.Close()
-	s.elf.Conns.Close()
-	s.innerRs.Range(func(k, v interface{}) bool {
+	s.elf.Service.Close()
+	s.elf.Connection.Close()
+	s.inRealServer.Range(func(k, v interface{}) bool {
 		v.(*ebpf.Map).Close()
 		return true
 	})
-	s.elf.Rs.Close()
-	s.elf.InnerRs.Close()
+	s.elf.RealServer.Close()
+	s.elf.InRealServer.Close()
 	s.elf.Event.Close()
 }
 
@@ -117,7 +109,7 @@ func (s *nat) Add(key *comm.SrvKey, val *comm.SrvVal) error {
 		return errors.Wrap(err, "marshal nat value failed")
 	}
 
-	inRsMap, err := createInnerRsMap(s.innerRsSpec, val)
+	inRsMap, err := createRealServerMap(s.inRealServerSpec, val)
 	if err != nil {
 		return err
 	}
@@ -127,18 +119,18 @@ func (s *nat) Add(key *comm.SrvKey, val *comm.SrvVal) error {
 		}
 	}()
 
-	if err = s.elf.Rs.Update(k, uint32(inRsMap.FD()), ebpf.UpdateNoExist); err != nil {
+	if err = s.elf.RealServer.Update(k, uint32(inRsMap.FD()), ebpf.UpdateNoExist); err != nil {
 		return errors.Wrap(err, "put nat inner map failed")
 	}
 
-	if err = s.elf.Services.Update(k, v, ebpf.UpdateNoExist); err != nil {
-		s.elf.Rs.Delete(k)
+	if err = s.elf.Service.Update(k, v, ebpf.UpdateNoExist); err != nil {
+		s.elf.RealServer.Delete(k)
 		return errors.Wrap(err, "put nat service failed")
 	}
-	s.innerRs.Store(*key, inRsMap)
+	s.inRealServer.Store(*key, inRsMap)
 	liteKey := *key
 	liteKey.ParentIP = ""
-	s.devIdx.Store(liteKey, devIdx{uint32(val.VDevIdx), uint32(val.LDevIdx)})
+	s.ifIdx.Store(liteKey, ifIdxInfo{uint32(val.VirtualIfIdx), uint32(val.LocalIfIdx)})
 	return nil
 }
 
@@ -147,18 +139,18 @@ func (s *nat) Del(key *comm.SrvKey) error {
 	if err != nil {
 		return errors.Wrap(err, "marshal nat key failed")
 	}
-	if err = s.elf.Services.Delete(k); err != nil && !errors.Is(err, ebpf.ErrKeyNotExist) {
+	if err = s.elf.Service.Delete(k); err != nil && !errors.Is(err, ebpf.ErrKeyNotExist) {
 		return errors.Wrap(err, "delete nat service failed")
 	}
-	if err = s.elf.Rs.Delete(k); err != nil {
+	if err = s.elf.RealServer.Delete(k); err != nil {
 		log.Errorf("del nat[%v] inner map failed: %+v", key, err)
 	}
-	if m, ok := s.innerRs.LoadAndDelete(*key); ok {
+	if m, ok := s.inRealServer.LoadAndDelete(*key); ok {
 		m.(*ebpf.Map).Close()
 	}
 	liteKey := *key
 	liteKey.ParentIP = ""
-	s.devIdx.Delete(liteKey)
+	s.ifIdx.Delete(liteKey)
 	return nil
 }
 
@@ -172,7 +164,7 @@ func (s *nat) Detach(idx int) error {
 
 // only keep positive connection
 func (s *nat) PollSession() []*comm.Session {
-	conns := pollConn(s.elf.Conns)
+	conns := pollConn(s.elf.Connection)
 	ses := make([]*comm.Session, 0, len(conns)/2)
 	for k, v := range conns {
 		if v.IsPositive {
@@ -198,14 +190,14 @@ func (s *nat) PushSession(ses []*comm.Session) {
 			continue
 		}
 
-		idxes, ok := s.devIdx.Load(comm.SrvKey{IP: v.VIP, Port: v.VPort, Proto: v.Proto})
+		idxes, ok := s.ifIdx.Load(comm.SrvKey{IP: v.VIP, Port: v.VPort, Proto: v.Proto})
 		if !ok {
 			log.Errorf("get %s:%d interface indexes failed", v.VIP, v.VPort)
 			continue
 		}
-		indexes := idxes.(devIdx)
-		ks, vs := v.ToConn(af, indexes.vdevIdx, indexes.ldevIdx, ts)
-		pushConn(s.elf.Conns, &s.foreignConn, ks, vs)
+		indexes := idxes.(ifIdxInfo)
+		ks, vs := v.ToConn(af, indexes.virtualIfIdx, indexes.localIfIdx, ts)
+		pushConn(s.elf.Connection, &s.foreignConn, ks, vs)
 		se := v
 		comm.PutSession(se)
 	}
@@ -217,7 +209,7 @@ func (s *nat) recycle() {
 		case <-s.close:
 			return
 		case <-s.ticker.C:
-			staleConn(s.elf.Conns, &s.foreignConn, uint64(s.timeout), false)
+			staleConn(s.elf.Connection, &s.foreignConn, uint64(s.timeout), false)
 		}
 	}
 }

@@ -3,12 +3,13 @@ package cmd
 import (
 	"context"
 	"fmt"
-	api "natbee/api"
-	"natbee/internal/comm"
 	"os"
 	"strconv"
 	"sync"
 	"time"
+
+	api "github.com/Netopian/natbee/api"
+	"github.com/Netopian/natbee/internal/comm"
 
 	"github.com/spf13/cobra"
 	"google.golang.org/grpc"
@@ -17,7 +18,7 @@ import (
 var (
 	cfgFile string
 	doOnce  sync.Once
-	client  api.NatbeeApiClient
+	client  api.NatBeeApiClient
 	ctx     context.Context
 )
 
@@ -65,14 +66,14 @@ func NewRootCmd() *cobra.Command {
 	return rootCmd
 }
 
-func newClient(ctx context.Context) (api.NatbeeApiClient, context.CancelFunc, error) {
+func newClient(ctx context.Context) (api.NatBeeApiClient, context.CancelFunc, error) {
 	grpcOpts := []grpc.DialOption{grpc.WithBlock(), grpc.WithInsecure()}
 	cc, cancel := context.WithTimeout(ctx, time.Second)
 	conn, err := grpc.DialContext(cc, "127.0.0.1"+strconv.Itoa(globalOpts.Port), grpcOpts...)
 	if err != nil {
 		return nil, cancel, err
 	}
-	return api.NewNatbeeApiClient(conn), cancel, nil
+	return api.NewNatBeeApiClient(conn), cancel, nil
 }
 
 func exitWithError(err error) {

@@ -2,11 +2,12 @@ package balancer
 
 import (
 	"fmt"
-	"natbee/internal/bpf"
-	"natbee/internal/comm"
-	"natbee/internal/intf"
-	"natbee/pkg/config"
 	"sync"
+
+	"github.com/Netopian/natbee/internal/bpf"
+	"github.com/Netopian/natbee/internal/comm"
+	"github.com/Netopian/natbee/internal/intf"
+	"github.com/Netopian/natbee/pkg/config"
 
 	"github.com/pkg/errors"
 )
@@ -59,7 +60,7 @@ func (b *Balancer) Release() {
 		b.fnat.Release()
 	}
 	b.attached.Range(func(k, v interface{}) bool {
-		devIdx, ok := k.(int)
+		ifIdx, ok := k.(int)
 		if !ok {
 			return true
 		}
@@ -69,9 +70,9 @@ func (b *Balancer) Release() {
 		}
 		switch info.mode {
 		case comm.ModeNat:
-			b.nat.Detach(devIdx)
+			b.nat.Detach(ifIdx)
 		case comm.ModeFNat:
-			b.fnat.Detach(devIdx)
+			b.fnat.Detach(ifIdx)
 		}
 		return true
 	})
@@ -101,9 +102,9 @@ func (b *Balancer) AddNat(k *comm.SrvKey, v *comm.SrvVal) error {
 		VirtualIP:     comm.JoinIP(k.IP, k.ParentIP),
 		VirtualPort:   uint32(k.Port),
 		Protocol:      k.Proto.String(),
-		LocalIP:       v.LIP,
-		RealPort:      uint32(v.RPort),
-		RealServerIPs: v.RsIps,
+		LocalIP:       v.LocalIP,
+		RealPort:      uint32(v.RealPort),
+		RealServerIPs: v.RealServerIPs,
 	})
 	return nil
 }
@@ -160,9 +161,9 @@ func (b *Balancer) AddFNat(k *comm.SrvKey, v *comm.SrvVal) error {
 		VirtualIP:     comm.JoinIP(k.IP, k.ParentIP),
 		VirtualPort:   uint32(k.Port),
 		Protocol:      k.Proto.String(),
-		LocalIP:       v.LIP,
-		RealPort:      uint32(v.RPort),
-		RealServerIPs: v.RsIps,
+		LocalIP:       v.LocalIP,
+		RealPort:      uint32(v.RealPort),
+		RealServerIPs: v.RealServerIPs,
 	})
 	return nil
 }
@@ -228,7 +229,7 @@ func (b *Balancer) loadService() error {
 }
 
 func (b *Balancer) attach(ip string, mode comm.BpfMode) error {
-	devIdx, err := intf.GetIfIdxByIp(ip)
+	ifIdx, err := intf.GetIfIdxByIp(ip)
 	if err != nil {
 		return err
 	}
@@ -238,13 +239,13 @@ func (b *Balancer) attach(ip string, mode comm.BpfMode) error {
 		if b.nat == nil {
 			err = errors.New("not support nat")
 		} else {
-			err = b.nat.Attach(devIdx)
+			err = b.nat.Attach(ifIdx)
 		}
 	case comm.ModeFNat:
 		if b.fnat == nil {
 			err = errors.New("not support fnat")
 		} else {
-			err = b.fnat.Attach(devIdx)
+			err = b.fnat.Attach(ifIdx)
 		}
 	default:
 		err = errors.New("not support mode")
@@ -252,16 +253,16 @@ func (b *Balancer) attach(ip string, mode comm.BpfMode) error {
 	if err != nil {
 		return errors.Wrap(err, "attach failed")
 	}
-	b.attached.Store(devIdx, &attachInfo{mode: mode})
+	b.attached.Store(ifIdx, &attachInfo{mode: mode})
 	return nil
 }
 
 func (b *Balancer) detach(ip string, mode comm.BpfMode) error {
-	devIdx, err := intf.GetIfIdxByIp(ip)
+	ifIdx, err := intf.GetIfIdxByIp(ip)
 	if err != nil {
 		return err
 	}
-	if v, ok := b.attached.Load(devIdx); !ok {
+	if v, ok := b.attached.Load(ifIdx); !ok {
 		return nil
 	} else if v.(*attachInfo).mode != mode {
 		return nil
@@ -272,13 +273,13 @@ func (b *Balancer) detach(ip string, mode comm.BpfMode) error {
 		if b.nat == nil {
 			err = errors.New("not support nat")
 		} else {
-			err = b.nat.Detach(devIdx)
+			err = b.nat.Detach(ifIdx)
 		}
 	case comm.ModeFNat:
 		if b.fnat == nil {
 			err = errors.New("not support fnat")
 		} else {
-			err = b.fnat.Detach(devIdx)
+			err = b.fnat.Detach(ifIdx)
 		}
 	default:
 		err = errors.New("not support mode")
@@ -286,13 +287,13 @@ func (b *Balancer) detach(ip string, mode comm.BpfMode) error {
 	if err != nil {
 		return errors.Wrap(err, "detach failed")
 	}
-	b.attached.Delete(devIdx)
+	b.attached.Delete(ifIdx)
 	return nil
 }
 
 func (b *Balancer) add(k *comm.SrvKey, v *comm.SrvVal, mode comm.BpfMode) error {
-	if val, ok := b.attached.Load(v.VDevIdx); !ok || val.(*attachInfo).mode != mode {
-		return fmt.Errorf("interface[%d] not attached or mode is mismatched", v.VDevIdx)
+	if val, ok := b.attached.Load(v.VirtualIfIdx); !ok || val.(*attachInfo).mode != mode {
+		return fmt.Errorf("interface[%d] not attached or mode is mismatched", v.VirtualIfIdx)
 	}
 	if _, exist := b.services.LoadOrStore(k, v); exist {
 		return errors.New("service exist")
@@ -359,28 +360,28 @@ func genSrvKeyVal(s config.Service, mode comm.BpfMode) (*comm.SrvKey, *comm.SrvV
 		return nil, nil, err
 	}
 	v := &comm.SrvVal{
-		Proto: k.Proto,
-		Mode:  mode,
-		RPort: uint16(s.RealPort),
-		RsIps: s.RealServerIPs,
+		Proto:         k.Proto,
+		Mode:          mode,
+		RealPort:      uint16(s.RealPort),
+		RealServerIPs: s.RealServerIPs,
 	}
-	v.LIP, v.ParentLIP = comm.SplitIP(s.LocalIP)
+	v.LocalIP, v.ParentLocalIP = comm.SplitIP(s.LocalIP)
 	if len(k.ParentIP) == 0 {
-		if v.VDevIdx, err = intf.GetIfIdxByIp(k.IP); err != nil {
+		if v.VirtualIfIdx, err = intf.GetIfIdxByIp(k.IP); err != nil {
 			return nil, nil, errors.Wrapf(err, "get virtual ip(%s) interface index failed", k.IP)
 		}
 	} else {
-		if v.VDevIdx, err = intf.GetIfIdxByIp(k.ParentIP); err != nil {
+		if v.VirtualIfIdx, err = intf.GetIfIdxByIp(k.ParentIP); err != nil {
 			return nil, nil, errors.Wrapf(err, "get parent virtual ip(%s) interface index failed", k.ParentIP)
 		}
 	}
-	if len(v.ParentLIP) == 0 {
-		if v.LDevIdx, err = intf.GetIfIdxByIp(v.LIP); err != nil {
-			return nil, nil, errors.Wrapf(err, "get local ip(%s) interface index failed", v.LIP)
+	if len(v.ParentLocalIP) == 0 {
+		if v.LocalIfIdx, err = intf.GetIfIdxByIp(v.LocalIP); err != nil {
+			return nil, nil, errors.Wrapf(err, "get local ip(%s) interface index failed", v.LocalIP)
 		}
 	} else {
-		if v.LDevIdx, err = intf.GetIfIdxByIp(v.ParentLIP); err != nil {
-			return nil, nil, errors.Wrapf(err, "get parent local ip(%s) interface index failed", v.ParentLIP)
+		if v.LocalIfIdx, err = intf.GetIfIdxByIp(v.ParentLocalIP); err != nil {
+			return nil, nil, errors.Wrapf(err, "get parent local ip(%s) interface index failed", v.ParentLocalIP)
 		}
 	}
 	return k, v, nil

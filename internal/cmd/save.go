@@ -1,7 +1,7 @@
 package cmd
 
 import (
-	api "natbee/api"
+	api "github.com/Netopian/natbee/api"
 
 	"github.com/spf13/cobra"
 )

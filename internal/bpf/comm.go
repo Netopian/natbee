@@ -1,10 +1,11 @@
 package bpf
 
 import (
-	"natbee/internal/comm"
-	"natbee/internal/netraw"
 	"runtime"
 	"sync"
+
+	"github.com/Netopian/natbee/internal/comm"
+	"github.com/Netopian/natbee/internal/netraw"
 
 	"github.com/cilium/ebpf"
 	"github.com/cilium/ebpf/perf"
@@ -14,29 +15,44 @@ import (
 )
 
 const (
-	connHashMapSz int = 1 << 13
+	connHashMapSz         int    = 1 << 13
+	inRealServerMapName   string = "nb_map_in_real_server"
+	inPortMapName         string = "nb_map_in_port"
+	natRealServerMapName  string = "nb_map_nat_real_server"
+	fnatRealServerMapName string = "nb_map_fnat_real_server"
+	fnatPortMapName       string = "nb_map_fnat_port"
+	startPort             uint32 = 5001
+	portMaxCnt            int    = 60000
+	szIdx                 uint32 = 65535
+	getIdx                uint32 = 65533
+	putIdx                uint32 = 65534
 )
 
 var (
-	connValPool *sync.Pool
+	connPool *sync.Pool
 )
 
+type ifIdxInfo struct {
+	virtualIfIdx uint32
+	localIfIdx   uint32
+}
+
 func init() {
-	connValPool = &sync.Pool{
+	connPool = &sync.Pool{
 		New: func() interface{} { return new(comm.ConnVal) },
 	}
 }
 
 func getConnVal() *comm.ConnVal {
-	return connValPool.Get().(*comm.ConnVal)
+	return connPool.Get().(*comm.ConnVal)
 }
 
 func putConnVal(v *comm.ConnVal) {
-	connValPool.Put(v)
+	connPool.Put(v)
 }
 
-func createInnerRsMap(spec *ebpf.MapSpec, val *comm.SrvVal) (*ebpf.Map, error) {
-	rsIps, err := comm.StrArrToIpArr(val.RsIps)
+func createRealServerMap(spec *ebpf.MapSpec, val *comm.SrvVal) (*ebpf.Map, error) {
+	rsIps, err := comm.ConvertToIPs(val.RealServerIPs)
 	if err != nil {
 		return nil, errors.Wrap(err, "create inner real server map failed")
 	}
@@ -101,7 +117,7 @@ func filterStaledConn(mc *sync.Map, conns *map[comm.ConnKey]*comm.ConnVal, timeo
 	}
 	for k, v := range *conns {
 		k1, k2 := k, comm.ConnKey{Af: k.Af, Proto: k.Proto,
-			RxSIP: v.TxDIP, RxSPort: v.TxDPort, RxDIP: v.TxSIP, RxDPort: v.TxSPort}
+			RxSIP: v.TxDstIP, RxSPort: v.TxDstPort, RxDIP: v.TxSrcIP, RxDPort: v.TxSrcPort}
 		ts := v.Ts / comm.NsCnt
 		if !v.IsLocal && v.IsPositive {
 			if t, ok := mc.Load(k); ok {

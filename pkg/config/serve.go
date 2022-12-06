@@ -1,9 +1,10 @@
 package config
 
 import (
-	"natbee/internal/comm"
 	"path/filepath"
 	"sync"
+
+	"github.com/Netopian/natbee/internal/comm"
 
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/viper"

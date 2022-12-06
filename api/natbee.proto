@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package natbeeapi;
 
-service NatbeeApi {
+service NatBeeApi {
     rpc Attach(AttachRequest) returns(Empty);
     rpc Detach(AttachRequest) returns(Empty);
     rpc AddService(AddRequest) returns(Empty);
@@ -26,39 +26,39 @@ enum Protocol {
 
 message Empty {}
 
-message SockAddr {
+message ServiceKey {
     string   ip       = 1;
     uint32   port     = 2;
     Protocol protocol = 3;
 }
 
 message Session {
-    string   cip      = 1;
-    uint32   cport    = 2;
-    string   vip      = 3;
-    uint32   vport    = 4;
-    string   lip      = 5;
-    uint32   lport    = 6;
-    string   rip      = 7;
-    uint32   rport    = 8;
+    string   client_ip    = 1;
+    uint32   client_port  = 2;
+    string   virtual_ip   = 3;
+    uint32   virtual_port = 4;
+    string   local_ip     = 5;
+    uint32   local_port   = 6;
+    string   real_ip      = 7;
+    uint32   real_port    = 8;
     Protocol protocol = 9;
 }
 
 message ServiceAttr {
-    string          lip    = 1;
-    uint32          rport  = 2;
-    repeated string rs_ips = 5;
+    string          local_ip        = 1;
+    uint32          real_port       = 2;
+    repeated string real_server_ips = 5;
 }
 
 message AddRequest {
     ServiceType type = 1;
-    SockAddr    key  = 2;
+    ServiceKey  key  = 2;
     ServiceAttr val  = 3;
 }
 
 message DelRequest {
     ServiceType type = 1;
-    SockAddr    key  = 2;
+    ServiceKey  key  = 2;
 }
 
 message AttachRequest {
