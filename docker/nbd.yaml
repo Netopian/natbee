@@ -1,0 +1,32 @@
+global:
+  nat-filepath: /app/natbee/bin/nat_bpfel.o
+  fnat-filepath: /app/natbee/bin/fnat_bpfel.o
+  conn-timeout: 5
+
+nat:
+  attached:
+  - 192.168.10.1
+  - 192.168.30.1
+  services:
+  - virtual-ip: 192.168.10.1
+    virtual-port: 8080
+    protocol: tcp
+    local-ip: 192.168.30.1
+    real-port: 8080
+    real-server-ips:
+    - 192.168.30.11
+    - 192.168.30.22
+
+fnat:
+  attached:
+  - 192.168.20.1
+  - 192.168.40.1
+  services:
+  - virtual-ip: 192.168.20.1
+    virtual-port: 8080
+    protocol: tcp
+    local-ip: 192.168.40.1
+    real-port: 8080
+    real-server-ips:
+    - 192.168.40.11
+    - 192.168.40.22
