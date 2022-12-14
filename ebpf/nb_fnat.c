@@ -44,12 +44,12 @@ static __always_inline __be16 select_shared_port(struct nb_sockaddr *src, struct
     struct nb_connection conn;
     conn.saddr = *src;
     conn.daddr = *dst;
-    struct nb_redirect *exist = bpf_map_lookup_elem(&mpa_fnat_conn, &conn);
+    struct nb_redirect *exist = bpf_map_lookup_elem(&nb_map_fnat_connection, &conn);
     if (!exist) {
         return conn.daddr.port;
     }
 
-    __u16 port = bpf_ntos(conn.daddr.port);
+    __u16 port = bpf_ntohs(conn.daddr.port);
     for (int i = 0; i < MAX_COLLISION_TIMES; i++) {
         __u32 rand = bpf_get_prandom_u32();
         port += (__u16)(rand % MAX_PORT_NO);
@@ -112,8 +112,8 @@ static __always_inline enum nb_action get_or_gen_conn(struct nb_context *ctx)
     } else {
         fwd_key.saddr.af = AF_INET;
         fwd_key.daddr.af = AF_INET;
-        fwd_key.saddr.addr4.addr = ((struct ipvhdr*)ctx->l3h)->saddr;
-        fwd_key.daddr.addr4.addr = ((struct ipvhdr*)ctx->l3h)->daddr;
+        fwd_key.saddr.addr4.addr = ((struct iphdr*)ctx->l3h)->saddr;
+        fwd_key.daddr.addr4.addr = ((struct iphdr*)ctx->l3h)->daddr;
     }
     fwd_key.saddr.port = ((struct udphdr*)ctx->l4h)->source;
     fwd_key.daddr.port = ((struct udphdr*)ctx->l4h)->dest;
@@ -137,7 +137,7 @@ static __always_inline enum nb_action get_or_gen_conn(struct nb_context *ctx)
     }
 
     // build forward redirect data
-    ctx->forward.redirect.saddr      = srv->saddr;
+    ctx->forward.redirect.saddr      = srv->laddr;
     ctx->forward.redirect.saddr.port = fwd_key.saddr.port;
     ctx->forward.redirect.daddr      = *rs;
     ctx->forward.redirect.daddr.port = srv->real_port;
@@ -175,15 +175,15 @@ static __always_inline enum nb_action get_or_gen_conn(struct nb_context *ctx)
     long update_ret = bpf_map_update_elem(&nb_map_fnat_connection, &fwd_key, &ctx->forward, BPF_NOEXIST);
     if (update_ret) {
         if (srv->strategy == STRATEGY_EXCLUSIVE) {
-            release_port(ctx->forward.redirect.saddr.port)
+            release_port(ctx->forward.redirect.saddr.port);
         }
         return NB_ACT_DROP;
     }
     update_ret = bpf_map_update_elem(&nb_map_fnat_connection, &rvs_key, &reverse, BPF_NOEXIST);
     if (update_ret) {
-        bpf_map_delete_elem(&nb_map_fnat_connection, &fwd_key)
+        bpf_map_delete_elem(&nb_map_fnat_connection, &fwd_key);
         if (srv->strategy == STRATEGY_EXCLUSIVE) {
-            release_port(ctx->forward.redirect.saddr.port)
+            release_port(ctx->forward.redirect.saddr.port);
         }
         return NB_ACT_DROP;
     }
@@ -195,7 +195,7 @@ SEC("xdp_fnat")
 int nb_xdp_fnat(struct xdp_md *xdp_ctx)
 {
     struct nb_context ctx;
-    __builtin_memset(&ctx, 0, sizeof*ctx);
+    __builtin_memset(&ctx, 0, sizeof(ctx));
     ctx.end       = (void*)(long)xdp_ctx->data_end;
     ctx.begin     = (void*)(long)xdp_ctx->data;
     ctx.stack_ctx = (void*)xdp_ctx;
