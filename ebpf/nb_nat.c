@@ -45,8 +45,8 @@ static __always_inline enum nb_action get_or_gen_conn(struct nb_context *ctx)
     } else {
         fwd_key.saddr.af = AF_INET;
         fwd_key.daddr.af = AF_INET;
-        fwd_key.saddr.addr4.addr = ((struct ipvhdr*)ctx->l3h)->saddr;
-        fwd_key.daddr.addr4.addr = ((struct ipvhdr*)ctx->l3h)->daddr;
+        fwd_key.saddr.addr4.addr = ((struct iphdr*)ctx->l3h)->saddr;
+        fwd_key.daddr.addr4.addr = ((struct iphdr*)ctx->l3h)->daddr;
     }
     fwd_key.saddr.port = ((struct udphdr*)ctx->l4h)->source;
     fwd_key.daddr.port = ((struct udphdr*)ctx->l4h)->dest;
@@ -95,7 +95,7 @@ static __always_inline enum nb_action get_or_gen_conn(struct nb_context *ctx)
     }
     update_ret = bpf_map_update_elem(&nb_map_nat_connection, &rvs_key, &reverse, BPF_NOEXIST);
     if (update_ret) {
-        bpf_map_delete_elem(&nb_map_nat_connection, &fwd_key)
+        bpf_map_delete_elem(&nb_map_nat_connection, &fwd_key);
         return NB_ACT_DROP;
     }
 
@@ -106,7 +106,7 @@ SEC("xdp_nat")
 int nb_xdp_nat(struct xdp_md *xdp_ctx)
 {
     struct nb_context ctx;
-    __builtin_memset(&ctx, 0, sizeof*ctx);
+    __builtin_memset(&ctx, 0, sizeof(ctx));
     ctx.end       = (void*)(long)xdp_ctx->data_end;
     ctx.begin     = (void*)(long)xdp_ctx->data;
     ctx.stack_ctx = (void*)xdp_ctx;
