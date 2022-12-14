@@ -11,14 +11,14 @@ static __always_inline enum nb_action nb_parse_ctx(struct nb_context *ctx)
 {
     // L2
     ctx->l2h = (struct ethhdr*)ctx->begin;
-    if ((void*)ctx->l2h + 1) > ctx->end) {
+    if ((void*)(ctx->l2h + 1) > ctx->end) {
         return NB_ACT_DROP;
     }
     // L3
     __u16 eth_p_ip = ctx->l2h->h_proto;
     eth_p_ip       = bpf_ntohs(eth_p_ip);
     ctx->l3h       = (void*)(ctx->l2h + 1);
-    if (eth_p_ip == Eth_P_IP) {
+    if (eth_p_ip == ETH_P_IP) {
         ctx->is_ipv6      = false;
         struct iphdr *iph = (struct iphdr*)ctx->l3h;
         if ((void*)(iph + 1) > ctx->end)
@@ -38,7 +38,7 @@ static __always_inline enum nb_action nb_parse_ctx(struct nb_context *ctx)
     } else if (eth_p_ip == ETH_P_IPV6) {
         ctx->is_ipv6          = true;
         struct ipv6hdr *ipv6h = (struct ipv6hdr*)ctx->l3h;
-        if ((void*)ipv6h + 1) > ctx->end)
+        if ((void*)(ipv6h + 1) > ctx->end)
             return NB_ACT_DROP;
         ctx->l3_header_len   = sizeof(struct ipv6hdr);
         __u16 len            = ipv6h->payload_len;
@@ -76,7 +76,7 @@ static __always_inline enum nb_action nb_swap_addr(struct nb_context *ctx)
         struct in6_addr *src   = (struct in6_addr*)fib_params.ipv6_src;
         struct in6_addr *dst   = (struct in6_addr*)fib_params.ipv6_dst;
         struct ipv6hdr  *ipv6h = (struct ipv6hdr*)ctx->l3h;
-        if ((void*)ipv6h + 1) > ctx->end)
+        if ((void*)(ipv6h + 1) > ctx->end)
             return NB_ACT_DROP;
         ipv6h->saddr           = *(struct in6_addr*)(&ctx->forward.redirect.saddr.addr6);
         ipv6h->daddr           = *(struct in6_addr*)(&ctx->forward.redirect.daddr.addr6);
