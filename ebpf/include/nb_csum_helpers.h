@@ -1,7 +1,7 @@
 #ifndef __NB_CSUM_HELPERS_H__
 #define __NB_CSUM_HELPERS_H__
 
-#include "balancer_structs.h"
+#include "nb_structs.h"
 
 static __always_inline __u16 nb_csum_fold_helper(__u64 cs)
 {
