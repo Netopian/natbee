@@ -5,7 +5,7 @@
 
 static __always_inline __u16 nb_csum_fold_helper(__u64 cs)
 {
-#progma unroll
+#pragma unroll
     for (int i = 0; i < 4; i++) {
         if (cs >> 16)
             cs = (cs & 0xffff) + (cs >> 16);
@@ -42,7 +42,7 @@ static __always_inline void nb_update_ip_csum(struct nb_context *ctx)
         return;
     }
     ((struct iphdr*)ctx->l3h)->check = 0;
-    __u64 cs = bpf_diff(0, 0, ctx->l3h, sizeof(struct iphdr), 0);
+    __u64 cs = bpf_csum_diff(0, 0, ctx->l3h, sizeof(struct iphdr), 0);
     cs       = nb_csum_fold_helper(cs);
     ((struct iphdr*)ctx->l3h)->check = cs;
 }
