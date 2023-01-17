@@ -7,6 +7,8 @@ import (
 	"github.com/pkg/errors"
 
 	"github.com/vishvananda/netlink"
+	"github.com/vishvananda/netlink/nl"
+	"golang.org/x/sys/unix"
 )
 
 func AttachLink(idx, fd int) error {

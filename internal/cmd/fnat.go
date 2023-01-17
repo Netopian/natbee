@@ -32,9 +32,8 @@ var fnatOpts struct {
 }
 
 func fnatShow() error {
-	fmt.Print(`FNatSession
-============================================================
-	`)
+	fmt.Println(`FNatSession
+============================================================`)
 	resp, err := client.Poll(ctx, &api.PollRequest{Type: api.ServiceType_FNAT})
 	if err != nil {
 		return err
