@@ -32,9 +32,8 @@ var natOpts struct {
 }
 
 func natShow() error {
-	fmt.Print(`NatSession
-============================================================
-	`)
+	fmt.Println(`NatSession
+============================================================`)
 	resp, err := client.Poll(ctx, &api.PollRequest{Type: api.ServiceType_NAT})
 	if err != nil {
 		return err

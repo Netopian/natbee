@@ -35,7 +35,7 @@ enum nb_action {
 enum {
     false = 0,
     true  = 1,
-}
+};
 
 struct nb_ip {
     __be32 addr;

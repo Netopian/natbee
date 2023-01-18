@@ -24,7 +24,7 @@ function deploy() {
     docker run --name=fnat-client --net=wan2 --ip=192.168.20.2 -d
     docker run --name=nat-rs1 --net=lan1 --ip=192.168.30.11 -d
     docker run --name=nat-rs2 --net=lan1 --ip=192.168.30.22 -d
-    docker run --name=fnat-rs1 --net=lan2 --ip=192.168.20.11 -d
+    docker run --name=fnat-rs1 --net=lan2 --ip=192.168.40.11 -d
     docker run --name=fnat-rs2 --net=lan2 --ip=192.168.40.22 -d
     docker exec nat-client apk add curl
     docker exec fnat-client apk add curl

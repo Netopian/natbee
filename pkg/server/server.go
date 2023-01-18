@@ -38,7 +38,7 @@ func NewAPIServer(g *grpc.Server, b *balancer.Balancer, c *config.ConfigSet, por
 }
 
 func (s *server) Serve() error {
-	address := fmt.Sprintf("%d", s.port)
+	address := fmt.Sprintf(":%d", s.port)
 	listener, err := net.Listen("tcp", address)
 	if err != nil {
 		log.Warn("listen failed")

@@ -69,7 +69,7 @@ func NewRootCmd() *cobra.Command {
 func newClient(ctx context.Context) (api.NatBeeApiClient, context.CancelFunc, error) {
 	grpcOpts := []grpc.DialOption{grpc.WithBlock(), grpc.WithInsecure()}
 	cc, cancel := context.WithTimeout(ctx, time.Second)
-	conn, err := grpc.DialContext(cc, "127.0.0.1"+strconv.Itoa(globalOpts.Port), grpcOpts...)
+	conn, err := grpc.DialContext(cc, "localhost:"+strconv.Itoa(globalOpts.Port), grpcOpts...)
 	if err != nil {
 		return nil, cancel, err
 	}

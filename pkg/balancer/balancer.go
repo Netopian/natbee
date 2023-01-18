@@ -39,7 +39,8 @@ func NewBalancer(conf *config.ConfigSet) (*Balancer, error) {
 	}
 
 	if len(conf.Global.FNatFilePath) > 0 {
-		b.fnat, err = bpf.NewNAT(conf.Global.FNatFilePath, conf.Global.ConnTimeout)
+		b.fnat, err = bpf.NewFNAT(conf.Global.FNatFilePath, conf.Global.ConnTimeout,
+			conf.FNat.ExclusivePortEnabled, conf.FNat.UseTc)
 		if err != nil {
 			return nil, errors.Wrap(err, "load fnat elf failed")
 		}
